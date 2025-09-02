@@ -1,0 +1,11 @@
+pyspark==3.3.2
+confluent-kafka==2.5.0   # Python Kafka client
+boto3==1.34.0            # AWS SDK for S3
+python-dotenv==1.0.0     # Load environment variables from .env file
+faker==22.6.0            # Generate fake data
+pandas==2.2.0           # Data manipulation
+numpy==1.26.0           # Numerical computations
+great-expectations==0.17.23  # Data quality checks
+dagster==1.5.8         # Workflow orchestration
+dbt-core==1.7.3       # Data transformation
+dbt-spark==1.7.1      # DBT adapter for Spark

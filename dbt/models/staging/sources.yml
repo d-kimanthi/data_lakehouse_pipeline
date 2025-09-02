@@ -1,0 +1,27 @@
+version: 2
+
+sources:
+  - name: retail
+    database: local
+    schema: retail
+    tables:
+      - name: orders
+        loaded_at_field: event_time
+        columns:
+          - name: order_id
+            tests:
+              - unique
+              - not_null
+          - name: customer_id
+            tests:
+              - not_null
+          - name: store_id
+            tests:
+              - not_null
+          - name: amount
+            tests:
+              - not_null
+              - positive_values
+          - name: event_time
+            tests:
+              - not_null

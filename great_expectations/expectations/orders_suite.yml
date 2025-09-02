@@ -1,0 +1,23 @@
+name: orders_suite
+config_version: 1.0
+expectations:
+  - expectation_type: expect_column_values_to_not_be_null
+    kwargs:
+      column: order_id
+  - expectation_type: expect_column_values_to_not_be_null
+    kwargs:
+      column: event_time
+  - expectation_type: expect_column_values_to_be_between
+    kwargs:
+      column: amount
+      min_value: 0
+      strictly_min: true
+  - expectation_type: expect_column_values_to_be_in_set
+    kwargs:
+      column: currency
+      value_set:
+        - USD
+  - expectation_type: expect_column_values_to_match_regex
+    kwargs:
+      column: store_id
+      regex: ^[A-Z]{2}-[A-Za-z]+-[0-9]+$
