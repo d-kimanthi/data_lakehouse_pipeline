@@ -37,4 +37,7 @@ sql-aws:
 
 sql-minio:
 	bash spark/sql_minio.sh
-.PHONY: up down logs create-topic list-topics produce-sample submit-aws submit-minio sql-aws sql-minio
+setup-catalog:
+	bash catalog/setup_catalog.sh
+
+.PHONY: up down logs create-topic list-topics produce-sample submit-aws submit-minio sql-aws sql-minio setup-catalog

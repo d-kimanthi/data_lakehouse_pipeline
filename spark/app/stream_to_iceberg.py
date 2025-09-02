@@ -19,7 +19,7 @@ from pyspark.sql.types import (
 # ---------- Config ----------
 KAFKA_BOOTSTRAP = "kafka:9092"
 KAFKA_TOPIC = "orders"
-CATALOG_NAME = "local"  # Spark SQL catalog name we configure at submit
+CATALOG_NAME = "aws_glue"  # AWS Glue catalog name configured in submit script
 NAMESPACE = "retail"  # DB/schema in Iceberg
 TABLE = "orders"  # Table name
 CHECKPOINT = (

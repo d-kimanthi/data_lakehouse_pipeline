@@ -18,9 +18,12 @@ org.apache.spark:spark-sql-kafka-0-10_2.12:3.3.2,\
 org.apache.iceberg:iceberg-spark-runtime-3.3_2.12:1.5.2,\
 org.apache.hadoop:hadoop-aws:3.3.4,\
 com.amazonaws:aws-java-sdk-bundle:1.12.262 \
-  --conf spark.sql.catalog.local=org.apache.iceberg.spark.SparkCatalog \
-  --conf spark.sql.catalog.local.type=hadoop \
-  --conf spark.sql.catalog.local.warehouse=s3a://${S3_BUCKET}/warehouse \
+  --conf spark.sql.catalog.aws_glue=org.apache.iceberg.spark.SparkCatalog \
+  --conf spark.sql.catalog.aws_glue.catalog-impl=org.apache.iceberg.aws.glue.GlueCatalog \
+  --conf spark.sql.catalog.aws_glue.warehouse=s3a://${S3_BUCKET}/warehouse \
+  --conf spark.sql.catalog.aws_glue.lock-impl=org.apache.iceberg.aws.glue.DynamoLockManager \
+  --conf spark.sql.catalog.aws_glue.lock.table=iceberg_locks \
+  --conf spark.sql.defaultCatalog=aws_glue \
   --conf spark.hadoop.fs.s3a.aws.credentials.provider=com.amazonaws.auth.EnvironmentVariableCredentialsProvider \
   --conf spark.hadoop.fs.s3a.endpoint=s3.${AWS_REGION}.amazonaws.com \
   --conf spark.hadoop.fs.s3a.path.style.access=false \
