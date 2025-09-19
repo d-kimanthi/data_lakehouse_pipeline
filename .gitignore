@@ -1,0 +1,182 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+.python-version
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Docker
+.dockerignore
+
+# Terraform
+*.tfstate
+*.tfstate.*
+*.tfvars
+.terraform/
+.terraform.lock.hcl
+terraform.tfplan
+terraform.tfplan.*
+crash.log
+crash.*.log
+
+# AWS
+.aws/
+*.pem
+*.key
+
+# Data directories (exclude actual data files but keep structure)
+data/bronze/*
+!data/bronze/.gitkeep
+data/silver/*
+!data/silver/.gitkeep
+data/gold/*
+!data/gold/.gitkeep
+data/logs/*
+!data/logs/.gitkeep
+data/checkpoints/*
+!data/checkpoints/.gitkeep
+
+# Dagster
+dagster_home/
+.dagster/
+dagster.yaml
+*.db
+*.sqlite
+
+# Spark
+*.log
+metastore_db/
+derby.log
+spark-warehouse/
+
+# Kafka/Zookeeper data
+kafka-logs/
+zookeeper/
+
+# MinIO data
+minio-data/
+
+# Monitoring data
+prometheus-data/
+grafana-data/
+
+# JAR files (exclude downloaded JARs but keep structure)
+jars/*.jar
+!jars/.gitkeep
+
+# Environment files
+.env.local
+.env.staging
+.env.production
+*.env
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.backup
+
+# Certificates and keys
+*.crt
+*.key
+*.pem
+*.p12
+*.jks
+
+# Logs
+*.log
+logs/
+
+# Node modules (if any frontend components)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Coverage reports
+htmlcov/
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+
+# Documentation builds
+docs/_build/
+
+# Local configuration overrides
+local.yaml
+local.yml
+override.yaml
+override.yml
+
+# Docker volumes and data
+docker-data/
+volumes/
+
+# Test artifacts
+.pytest_cache/
+test-results/
+test-output/
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Secrets and credentials
+secrets/
+credentials/
+*.secret
+*.credential
