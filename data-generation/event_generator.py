@@ -1,17 +1,151 @@
 # data-generation/event_generator.py
 
 import json
+import logging
 import random
 import uuid
-from datetime import datetime, timedelta
-from typing import Dict, List, Any
+from dataclasses import asdict, dataclass
+from datetime import datetime
+from typing import Any, Dict, List
+
 import numpy as np
 from faker import Faker
 from kafka import KafkaProducer
-import logging
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+# ===============================
+# Event Dataclasses
+# ===============================
+
+
+@dataclass
+class PageViewEvent:
+    """Page view event with all required fields"""
+
+    event_id: str
+    event_type: str
+    timestamp: str
+    user_id: str
+    session_id: str
+    product_id: str
+    page_type: str
+    referrer: str
+    user_agent: str
+    ip_address: str
+    device_type: str
+    metadata: Dict[str, Any]
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert dataclass to dictionary for JSON serialization"""
+        return asdict(self)
+
+
+@dataclass
+class AddToCartEvent:
+    """Add to cart event with all required fields"""
+
+    event_id: str
+    event_type: str
+    timestamp: str
+    user_id: str
+    session_id: str
+    product_id: str
+    quantity: int
+    price: float
+    total_value: float
+    cart_id: str
+    metadata: Dict[str, Any]
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert dataclass to dictionary for JSON serialization"""
+        return asdict(self)
+
+
+@dataclass
+class PurchaseItem:
+    """Individual item in a purchase"""
+
+    product_id: str
+    quantity: int
+    unit_price: float
+    total_price: float
+    category: str
+    brand: str
+
+
+@dataclass
+class ShippingAddress:
+    """Shipping address for purchases"""
+
+    street: str
+    city: str
+    state: str
+    zip_code: str
+    country: str
+
+
+@dataclass
+class PurchaseEvent:
+    """Purchase event with all required fields"""
+
+    event_id: str
+    event_type: str
+    timestamp: str
+    user_id: str
+    session_id: str
+    order_id: str
+    items: List[PurchaseItem]
+    subtotal: float
+    discount_percent: int
+    discount_amount: float
+    total_amount: float
+    payment_method: str
+    shipping_method: str
+    shipping_address: ShippingAddress
+    metadata: Dict[str, Any]
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert dataclass to dictionary for JSON serialization"""
+        return asdict(self)
+
+
+@dataclass
+class UserSessionEvent:
+    """User session event (login/logout/timeout)"""
+
+    event_id: str
+    event_type: str
+    timestamp: str
+    user_id: str
+    session_id: str
+    session_type: str
+    device_type: str
+    ip_address: str
+    user_agent: str
+    metadata: Dict[str, Any]
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert dataclass to dictionary for JSON serialization"""
+        return asdict(self)
+
+
+@dataclass
+class ProductUpdateEvent:
+    """Product update event (price/inventory/rating changes)"""
+
+    event_id: str
+    event_type: str
+    timestamp: str
+    product_id: str
+    update_type: str
+    metadata: Dict[str, Any]
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert dataclass to dictionary for JSON serialization"""
+        return asdict(self)
 
 
 class EcommerceEventGenerator:
@@ -86,36 +220,36 @@ class EcommerceEventGenerator:
 
         return users
 
-    def generate_page_view_event(self) -> Dict[str, Any]:
+    def generate_page_view_event(self) -> PageViewEvent:
         """Generate a realistic page view event"""
         user = random.choice(self.users)
         product = random.choice(self.products)
 
-        event = {
-            "event_id": str(uuid.uuid4()),
-            "event_type": "page_view",
-            "timestamp": datetime.utcnow().isoformat() + "Z",
-            "user_id": user["user_id"],
-            "session_id": str(uuid.uuid4())[:8],
-            "product_id": product["product_id"],
-            "page_type": random.choice(
+        event = PageViewEvent(
+            event_id=str(uuid.uuid4()),
+            event_type="page_view",
+            timestamp=datetime.utcnow().isoformat() + "Z",
+            user_id=user["user_id"],
+            session_id=str(uuid.uuid4())[:8],
+            product_id=product["product_id"],
+            page_type=random.choice(
                 ["product_detail", "category", "search_results", "home"]
             ),
-            "referrer": random.choice(
+            referrer=random.choice(
                 ["google.com", "facebook.com", "direct", "email", "advertisement"]
             ),
-            "user_agent": self.fake.user_agent(),
-            "ip_address": self.fake.ipv4(),
-            "device_type": random.choice(["mobile", "desktop", "tablet"]),
-            "metadata": {
+            user_agent=self.fake.user_agent(),
+            ip_address=self.fake.ipv4(),
+            device_type=random.choice(["mobile", "desktop", "tablet"]),
+            metadata={
                 "page_load_time": round(random.uniform(0.5, 5.0), 2),
                 "scroll_depth": random.randint(10, 100),
                 "time_on_page": random.randint(5, 300),
             },
-        }
+        )
         return event
 
-    def generate_add_to_cart_event(self) -> Dict[str, Any]:
+    def generate_add_to_cart_event(self) -> AddToCartEvent:
         """Generate an add to cart event"""
         user = random.choice(self.users)
         product = random.choice(self.products)
@@ -123,27 +257,27 @@ class EcommerceEventGenerator:
             0
         ]
 
-        event = {
-            "event_id": str(uuid.uuid4()),
-            "event_type": "add_to_cart",
-            "timestamp": datetime.utcnow().isoformat() + "Z",
-            "user_id": user["user_id"],
-            "session_id": str(uuid.uuid4())[:8],
-            "product_id": product["product_id"],
-            "quantity": quantity,
-            "price": product["price"],
-            "total_value": round(product["price"] * quantity, 2),
-            "cart_id": str(uuid.uuid4())[:8],
-            "metadata": {
+        event = AddToCartEvent(
+            event_id=str(uuid.uuid4()),
+            event_type="add_to_cart",
+            timestamp=datetime.utcnow().isoformat() + "Z",
+            user_id=user["user_id"],
+            session_id=str(uuid.uuid4())[:8],
+            product_id=product["product_id"],
+            quantity=quantity,
+            price=product["price"],
+            total_value=round(product["price"] * quantity, 2),
+            cart_id=str(uuid.uuid4())[:8],
+            metadata={
                 "source": random.choice(
                     ["product_page", "search_results", "recommendations"]
                 ),
                 "cart_size_before": random.randint(0, 10),
             },
-        }
+        )
         return event
 
-    def generate_purchase_event(self) -> Dict[str, Any]:
+    def generate_purchase_event(self) -> PurchaseEvent:
         """Generate a purchase event"""
         user = random.choice(self.users)
 
@@ -157,14 +291,14 @@ class EcommerceEventGenerator:
             quantity = random.choices([1, 2, 3], weights=[0.7, 0.2, 0.1])[0]
             item_total = product["price"] * quantity
 
-            item = {
-                "product_id": product["product_id"],
-                "quantity": quantity,
-                "unit_price": product["price"],
-                "total_price": round(item_total, 2),
-                "category": product["category"],
-                "brand": product["brand"],
-            }
+            item = PurchaseItem(
+                product_id=product["product_id"],
+                quantity=quantity,
+                unit_price=product["price"],
+                total_price=round(item_total, 2),
+                category=product["category"],
+                brand=product["brand"],
+            )
             items.append(item)
             total_amount += item_total
 
@@ -176,82 +310,86 @@ class EcommerceEventGenerator:
         discount_amount = total_amount * (discount_percent / 100)
         final_amount = total_amount - discount_amount
 
-        event = {
-            "event_id": str(uuid.uuid4()),
-            "event_type": "purchase",
-            "timestamp": datetime.utcnow().isoformat() + "Z",
-            "user_id": user["user_id"],
-            "session_id": str(uuid.uuid4())[:8],
-            "order_id": str(uuid.uuid4()),
-            "items": items,
-            "subtotal": round(total_amount, 2),
-            "discount_percent": discount_percent,
-            "discount_amount": round(discount_amount, 2),
-            "total_amount": round(final_amount, 2),
-            "payment_method": random.choice(
+        shipping_address = ShippingAddress(
+            street=self.fake.street_address(),
+            city=self.fake.city(),
+            state=self.fake.state(),
+            zip_code=self.fake.zipcode(),
+            country="US",
+        )
+
+        event = PurchaseEvent(
+            event_id=str(uuid.uuid4()),
+            event_type="purchase",
+            timestamp=datetime.utcnow().isoformat() + "Z",
+            user_id=user["user_id"],
+            session_id=str(uuid.uuid4())[:8],
+            order_id=str(uuid.uuid4()),
+            items=items,
+            subtotal=round(total_amount, 2),
+            discount_percent=discount_percent,
+            discount_amount=round(discount_amount, 2),
+            total_amount=round(final_amount, 2),
+            payment_method=random.choice(
                 ["credit_card", "debit_card", "paypal", "apple_pay"]
             ),
-            "shipping_method": random.choice(["standard", "expedited", "overnight"]),
-            "shipping_address": {
-                "street": self.fake.street_address(),
-                "city": self.fake.city(),
-                "state": self.fake.state(),
-                "zip_code": self.fake.zipcode(),
-                "country": "US",
-            },
-            "metadata": {
+            shipping_method=random.choice(["standard", "expedited", "overnight"]),
+            shipping_address=shipping_address,
+            metadata={
                 "is_mobile_purchase": random.choice([True, False]),
                 "payment_processor": random.choice(["stripe", "paypal", "square"]),
                 "currency": "USD",
             },
-        }
+        )
         return event
 
-    def generate_user_session_event(self) -> Dict[str, Any]:
-        """Generate user session events (login, logout)"""
+    def generate_user_session_event(self) -> UserSessionEvent:
+        """Generate a user session event (login/logout)"""
         user = random.choice(self.users)
-        session_type = random.choice(["login", "logout", "session_timeout"])
+        action = random.choice(["login", "logout"])
 
-        event = {
-            "event_id": str(uuid.uuid4()),
-            "event_type": "user_session",
-            "timestamp": datetime.utcnow().isoformat() + "Z",
-            "user_id": user["user_id"],
-            "session_id": str(uuid.uuid4())[:8],
-            "session_type": session_type,
-            "device_type": random.choice(["mobile", "desktop", "tablet"]),
-            "ip_address": self.fake.ipv4(),
-            "user_agent": self.fake.user_agent(),
-            "metadata": {
+        event = UserSessionEvent(
+            event_id=str(uuid.uuid4()),
+            event_type="user_session",
+            timestamp=datetime.utcnow().isoformat() + "Z",
+            user_id=user["user_id"],
+            session_id=str(uuid.uuid4())[:8],
+            session_type=action,
+            device_type=random.choice(["desktop", "mobile", "tablet"]),
+            ip_address=self.fake.ipv4(),
+            user_agent=random.choice(
+                [
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+                    "Mozilla/5.0 (iPhone; CPU iPhone OS 14_7_1 like Mac OS X) AppleWebKit/605.1.15",
+                    "Mozilla/5.0 (Android 11; Mobile; rv:68.0) Gecko/68.0 Firefox/88.0",
+                ]
+            ),
+            metadata={
                 "login_method": (
-                    random.choice(["email", "google", "facebook", "guest"])
-                    if session_type == "login"
+                    random.choice(["email", "social", "sso"])
+                    if action == "login"
                     else None
                 ),
                 "session_duration": (
-                    random.randint(60, 3600)
-                    if session_type in ["logout", "session_timeout"]
-                    else None
+                    random.randint(300, 7200) if action == "logout" else None
                 ),
+                "referrer": random.choice(
+                    [None, "google.com", "facebook.com", "direct"]
+                ),
+                "location": f"{self.fake.city()}, {self.fake.country()}",
             },
-        }
+        )
         return event
 
-    def generate_product_update_event(self) -> Dict[str, Any]:
+    def generate_product_update_event(self) -> ProductUpdateEvent:
         """Generate product update events"""
         product = random.choice(self.products)
         update_type = random.choice(
             ["price_change", "inventory_update", "rating_update"]
         )
 
-        event = {
-            "event_id": str(uuid.uuid4()),
-            "event_type": "product_update",
-            "timestamp": datetime.utcnow().isoformat() + "Z",
-            "product_id": product["product_id"],
-            "update_type": update_type,
-            "metadata": {},
-        }
+        metadata = {}
 
         if update_type == "price_change":
             old_price = product["price"]
@@ -262,7 +400,7 @@ class EcommerceEventGenerator:
                 change_percent = random.uniform(-30, 30) / 100
 
             new_price = max(5.0, old_price * (1 + change_percent))
-            event["metadata"] = {
+            metadata = {
                 "old_price": old_price,
                 "new_price": round(new_price, 2),
                 "change_percent": round(change_percent * 100, 2),
@@ -274,7 +412,7 @@ class EcommerceEventGenerator:
             change = random.randint(-50, 100)
             new_inventory = max(0, old_inventory + change)
 
-            event["metadata"] = {
+            metadata = {
                 "old_inventory": old_inventory,
                 "new_inventory": new_inventory,
                 "change": change,
@@ -284,14 +422,22 @@ class EcommerceEventGenerator:
             old_rating = product["rating"]
             new_rating = max(1.0, min(5.0, old_rating + random.uniform(-0.5, 0.5)))
 
-            event["metadata"] = {
+            metadata = {
                 "old_rating": old_rating,
                 "new_rating": round(new_rating, 1),
             }
 
+        event = ProductUpdateEvent(
+            event_id=str(uuid.uuid4()),
+            event_type="product_update",
+            timestamp=datetime.utcnow().isoformat() + "Z",
+            product_id=product["product_id"],
+            update_type=update_type,
+            metadata=metadata,
+        )
         return event
 
-    def generate_event(self) -> Dict[str, Any]:
+    def generate_event(self) -> Dict[str, Any]:  # type: ignore
         """Generate a random event based on realistic probabilities"""
         event_weights = {
             "page_view": 0.6,
@@ -306,15 +452,15 @@ class EcommerceEventGenerator:
         )[0]
 
         if event_type == "page_view":
-            return self.generate_page_view_event()
+            return self.generate_page_view_event().to_dict()
         elif event_type == "add_to_cart":
-            return self.generate_add_to_cart_event()
+            return self.generate_add_to_cart_event().to_dict()
         elif event_type == "purchase":
-            return self.generate_purchase_event()
+            return self.generate_purchase_event().to_dict()
         elif event_type == "user_session":
-            return self.generate_user_session_event()
+            return self.generate_user_session_event().to_dict()
         elif event_type == "product_update":
-            return self.generate_product_update_event()
+            return self.generate_product_update_event().to_dict()
 
 
 class KafkaEventProducer:
@@ -342,7 +488,7 @@ class KafkaEventProducer:
             # Use user_id as key for proper partitioning
             key = event.get("user_id") or event.get("product_id", "unknown")
 
-            future = self.producer.send(topic=self.topic, key=key, value=event)
+            self.producer.send(topic=self.topic, key=key, value=event)
 
             # Optional: Wait for confirmation (comment out for better performance)
             # record_metadata = future.get(timeout=10)

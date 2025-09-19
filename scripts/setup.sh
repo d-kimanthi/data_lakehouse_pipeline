@@ -61,11 +61,11 @@ fi
 
 # Pull Docker images
 echo "Pulling Docker images..."
-docker-compose pull
+docker compose pull
 
 # Start infrastructure services
 echo "Starting infrastructure services..."
-docker-compose up -d zookeeper kafka schema-registry minio postgres
+docker compose up -d zookeeper kafka schema-registry minio postgres
 
 # Wait for services to be ready
 echo "Waiting for services to initialize..."
@@ -79,7 +79,7 @@ docker exec kafka kafka-topics --create --topic alerts --partitions 3 --replicat
 
 # Start remaining services
 echo "Starting all services..."
-docker-compose up -d
+docker compose up -d
 
 # Install Python dependencies
 echo "Installing Python dependencies..."
