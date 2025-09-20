@@ -1,0 +1,18 @@
+# Add this to your local/docker-compose.yml
+
+# dbt Service
+dbt:
+  image: dbt-postgres:latest
+  container_name: ecommerce-dbt
+  depends_on:
+    - postgres
+  environment:
+    DBT_PROFILES_DIR: /opt/dbt/profiles
+    DBT_PROJECT_DIR: /opt/dbt/project
+  volumes:
+    - ../dbt:/opt/dbt/project
+    - ../dbt/profiles:/opt/dbt/profiles
+  working_dir: /opt/dbt/project
+  command: ["dbt", "run"]
+  networks:
+    - ecommerce-network

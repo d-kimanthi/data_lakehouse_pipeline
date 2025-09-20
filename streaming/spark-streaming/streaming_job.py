@@ -16,38 +16,121 @@ logger = logging.getLogger(__name__)
 class EcommerceStreamProcessor:
     """
     Spark Streaming processor for e-commerce events
+    Real-time processing: Kafka → Bronze → Silver (Iceberg tables)
     """
 
     def __init__(self, app_name: str = "ecommerce-streaming"):
         self.app_name = app_name
         self.spark = self._create_spark_session()
         self._setup_schemas()
+        self._create_iceberg_tables()
 
     def _create_spark_session(self) -> SparkSession:
         """Create Spark session with Iceberg and Kafka configurations"""
 
-        # Iceberg and Kafka JARs - these should be available in EMR or added to classpath
-        packages = [
-            "org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0",
-            "org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.4.2",
-            "org.apache.hadoop:hadoop-aws:3.3.4",
-            "com.amazonaws:aws-java-sdk-bundle:1.12.565",
-        ]
-
+        # For local development - using MinIO as S3
         spark = (
             SparkSession.builder.appName(self.app_name)
-            .config("spark.jars.packages", ",".join(packages))
+            .config("spark.jars.packages", 
+                    "org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0,"
+                    "org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.4.2,"
+                    "org.apache.hadoop:hadoop-aws:3.3.4,"
+                    "com.amazonaws:aws-java-sdk-bundle:1.12.565")
             .config("spark.sql.adaptive.enabled", "true")
             .config("spark.sql.adaptive.coalescePartitions.enabled", "true")
-            .config(
-                "spark.sql.extensions",
-                "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions",
+            .config("spark.sql.extensions", 
+                    "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions")
+            .config("spark.sql.catalog.iceberg", 
+                    "org.apache.iceberg.spark.SparkCatalog")
+            .config("spark.sql.catalog.iceberg.type", "hadoop")
+            .config("spark.sql.catalog.iceberg.warehouse", 
+                    "s3a://bronze/iceberg-warehouse/")
+            # MinIO configuration for local development
+            .config("spark.hadoop.fs.s3a.impl", 
+                    "org.apache.hadoop.fs.s3a.S3AFileSystem")
+            .config("spark.hadoop.fs.s3a.endpoint", "http://localhost:9000")
+            .config("spark.hadoop.fs.s3a.access.key", "minioadmin")
+            .config("spark.hadoop.fs.s3a.secret.key", "minioadmin")
+            .config("spark.hadoop.fs.s3a.path.style.access", "true")
+            .config("spark.hadoop.fs.s3a.connection.ssl.enabled", "false")
+            .getOrCreate()
+        )
+
+        spark.sparkContext.setLogLevel("WARN")
+        return spark
+
+    def _create_iceberg_tables(self):
+        """Create Iceberg tables for Bronze and Silver layers"""
+        
+        # Bronze layer - raw events table
+        self.spark.sql("""
+            CREATE TABLE IF NOT EXISTS iceberg.bronze.raw_events (
+                event_id STRING,
+                event_type STRING,
+                timestamp TIMESTAMP,
+                topic STRING,
+                partition INT,
+                offset BIGINT,
+                raw_data STRING,
+                processing_time TIMESTAMP
+            ) USING iceberg
+            PARTITIONED BY (days(timestamp))
+            TBLPROPERTIES (
+                'write.parquet.compression-codec'='snappy',
+                'write.metadata.delete-after-commit.enabled'='true',
+                'write.metadata.previous-versions-max'='3'
             )
-            .config(
-                "spark.sql.catalog.spark_catalog",
-                "org.apache.iceberg.spark.SparkSessionCatalog",
+        """)
+        
+        # Silver layer - page views table
+        self.spark.sql("""
+            CREATE TABLE IF NOT EXISTS iceberg.silver.page_views (
+                event_id STRING,
+                timestamp TIMESTAMP,
+                user_id STRING,
+                session_id STRING,
+                product_id STRING,
+                page_type STRING,
+                referrer STRING,
+                user_agent STRING,
+                ip_address STRING,
+                device_type STRING,
+                metadata MAP<STRING, STRING>,
+                processing_time TIMESTAMP
+            ) USING iceberg
+            PARTITIONED BY (days(timestamp))
+            TBLPROPERTIES (
+                'write.parquet.compression-codec'='snappy'
             )
-            .config("spark.sql.catalog.spark_catalog.type", "hive")
+        """)
+        
+        # Silver layer - purchases table
+        self.spark.sql("""
+            CREATE TABLE IF NOT EXISTS iceberg.silver.purchases (
+                event_id STRING,
+                timestamp TIMESTAMP,
+                user_id STRING,
+                session_id STRING,
+                order_id STRING,
+                total_price DECIMAL(10,2),
+                payment_method STRING,
+                shipping_address STRING,
+                products ARRAY<STRUCT<
+                    product_id: STRING,
+                    name: STRING,
+                    price: DECIMAL(10,2),
+                    quantity: INT
+                >>,
+                metadata MAP<STRING, STRING>,
+                processing_time TIMESTAMP
+            ) USING iceberg
+            PARTITIONED BY (days(timestamp))
+            TBLPROPERTIES (
+                'write.parquet.compression-codec'='snappy'
+            )
+        """)
+
+        logger.info("Iceberg tables created successfully")
             .config(
                 "spark.sql.catalog.iceberg", "org.apache.iceberg.spark.SparkCatalog"
             )

@@ -1,0 +1,5 @@
+# dbt dependencies for the data pipeline
+dbt-core>=1.6.0
+dbt-postgres>=1.6.0
+dbt-duckdb>=1.6.0  # For local development
+dagster-dbt>=0.21.0  # Dagster-dbt integration

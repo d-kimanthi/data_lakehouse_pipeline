@@ -1,25 +1,27 @@
 # dagster/dagster_project/jobs/__init__.py
 
+from assets.data_marts import (
+    bronze_events,
+    daily_sales_summary,
+    data_quality_report,
+    product_analytics,
+    silver_events,
+    user_behavior_metrics,
+)
+
 from dagster import (
+    AssetSelection,
+    DefaultScheduleStatus,
+    Definitions,
+    build_schedule_from_partitioned_job,
     define_asset_job,
     job,
     op,
     schedule,
-    DefaultScheduleStatus,
-    build_schedule_from_partitioned_job,
-    AssetSelection,
-    Definitions,
 )
-from ..assets.data_marts import (
-    bronze_events,
-    silver_events,
-    daily_sales_summary,
-    user_behavior_metrics,
-    product_analytics,
-    data_quality_report,
-)
-from ..resources.spark_resource import spark_resource
-from ..resources.iceberg_resource import iceberg_resource
+
+# from resources.spark_resource import spark_resource
+# from resources.iceberg_resource import iceberg_resource
 
 # Asset selection for different processing layers
 bronze_assets = AssetSelection.assets(bronze_events)
@@ -102,14 +104,15 @@ def daily_complete_pipeline_schedule(context):
 
 
 # Manual backfill job for historical data
-@job(resource_defs={"spark": spark_resource, "iceberg": iceberg_resource})
+@job  # (resource_defs={"spark": spark_resource, "iceberg": iceberg_resource})
 def backfill_historical_data():
     """
     Manual job for backfilling historical data
     """
-    backfill_bronze()
-    backfill_silver()
-    backfill_gold()
+    # backfill_bronze()
+    # backfill_silver()
+    # backfill_gold()
+    pass
 
 
 @op
@@ -136,14 +139,15 @@ def backfill_gold(context):
 
 
 # Real-time monitoring job
-@job(resource_defs={"spark": spark_resource})
+@job  # (resource_defs={"spark": spark_resource})
 def streaming_monitoring_job():
     """
     Monitor streaming pipeline health and performance
     """
-    check_kafka_lag()
-    check_spark_streaming_health()
-    validate_data_freshness()
+    # check_kafka_lag()
+    # check_spark_streaming_health()
+    # validate_data_freshness()
+    pass
 
 
 @op
@@ -191,8 +195,9 @@ def critical_alerts_job():
     """
     Job to handle critical data pipeline alerts
     """
-    check_data_pipeline_failures()
-    send_alert_notifications()
+    # check_data_pipeline_failures()
+    # send_alert_notifications()
+    pass
 
 
 @op
@@ -223,9 +228,11 @@ def send_alert_notifications(context):
 
 # dagster/dagster_project/resources/spark_resource.py
 
-from dagster import resource, InitResourceContext
-from pyspark.sql import SparkSession
 import os
+
+from pyspark.sql import SparkSession
+
+from dagster import InitResourceContext, resource
 
 
 @resource(config_schema={"spark_conf": dict, "app_name": str, "master": str})
@@ -273,9 +280,11 @@ def spark_resource(init_context: InitResourceContext):
 
 # dagster/dagster_project/resources/iceberg_resource.py
 
-from dagster import resource, InitResourceContext
-import boto3
 import os
+
+import boto3
+
+from dagster import InitResourceContext, resource
 
 
 @resource(config_schema={"warehouse_path": str, "catalog_type": str, "aws_region": str})
@@ -313,9 +322,11 @@ def iceberg_resource(init_context: InitResourceContext):
 
 # dagster/dagster_project/resources/kafka_resource.py
 
-from dagster import resource, InitResourceContext
-from kafka import KafkaConsumer, KafkaProducer
 import json
+
+from kafka import KafkaConsumer, KafkaProducer
+
+from dagster import InitResourceContext, resource
 
 
 @resource(
@@ -368,98 +379,5 @@ def kafka_resource(init_context: InitResourceContext):
 
 
 # ===============================
-# Main Definitions
+# End of Jobs Module
 # ===============================
-
-# dagster/dagster_project/__init__.py
-
-from dagster import Definitions
-from .assets.data_marts import (
-    bronze_events,
-    silver_events,
-    daily_sales_summary,
-    user_behavior_metrics,
-    product_analytics,
-    data_quality_report,
-)
-from .jobs import (
-    bronze_processing_job,
-    silver_processing_job,
-    gold_processing_job,
-    daily_processing_job,
-    backfill_historical_data,
-    streaming_monitoring_job,
-    critical_alerts_job,
-    daily_bronze_schedule,
-    daily_silver_schedule,
-    daily_gold_schedule,
-    daily_complete_pipeline_schedule,
-    data_quality_monitoring_schedule,
-)
-from .resources.spark_resource import spark_resource
-from .resources.iceberg_resource import iceberg_resource
-from .resources.kafka_resource import kafka_resource
-
-# Define all assets, jobs, schedules, and resources
-defs = Definitions(
-    assets=[
-        bronze_events,
-        silver_events,
-        daily_sales_summary,
-        user_behavior_metrics,
-        product_analytics,
-        data_quality_report,
-    ],
-    jobs=[
-        bronze_processing_job,
-        silver_processing_job,
-        gold_processing_job,
-        daily_processing_job,
-        backfill_historical_data,
-        streaming_monitoring_job,
-        critical_alerts_job,
-    ],
-    schedules=[
-        daily_bronze_schedule,
-        daily_silver_schedule,
-        daily_gold_schedule,
-        daily_complete_pipeline_schedule,
-        data_quality_monitoring_schedule,
-    ],
-    resources={
-        "spark": spark_resource.configured(
-            {
-                "spark_conf": {
-                    "spark.sql.adaptive.enabled": "true",
-                    "spark.sql.adaptive.coalescePartitions.enabled": "true",
-                    "spark.sql.adaptive.coalescePartitions.minPartitionSize": "128MB",
-                    "spark.serializer": "org.apache.spark.serializer.KryoSerializer",
-                },
-                "app_name": "ecommerce-analytics-dagster",
-                "master": "local[*]",  # Override in production
-            }
-        ),
-        "iceberg": iceberg_resource.configured(
-            {
-                "warehouse_path": "s3://your-data-lake-bucket/iceberg-warehouse/",
-                "catalog_type": "glue",
-                "aws_region": "us-west-2",
-            }
-        ),
-        "kafka": kafka_resource.configured(
-            {
-                "bootstrap_servers": ["your-msk-cluster:9092"],
-                "consumer_config": {
-                    "group_id": "dagster-consumer-group",
-                    "session_timeout_ms": 30000,
-                    "heartbeat_interval_ms": 3000,
-                },
-                "producer_config": {
-                    "batch_size": 16384,
-                    "linger_ms": 10,
-                    "buffer_memory": 33554432,
-                },
-            }
-        ),
-    },
-)

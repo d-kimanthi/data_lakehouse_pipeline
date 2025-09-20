@@ -235,7 +235,7 @@ services:
   # Dagster Daemon - Orchestration daemon
   dagster-daemon:
     build: 
-      context: ../../..
+      context: .
       dockerfile: Dockerfile.dagster
     container_name: ecommerce-dagster-daemon
     depends_on:
@@ -247,19 +247,20 @@ services:
       DAGSTER_POSTGRES_DB: dagster
       DAGSTER_POSTGRES_HOST: postgres
       DAGSTER_POSTGRES_PORT: 5432
+      DAGSTER_POSTGRES_URL: postgresql://dagster:dagster@postgres:5432/dagster
       DAGSTER_HOME: /opt/dagster/dagster_home
     volumes:
-      - ./dagster:/opt/dagster/app
+      - ../dagster/dagster_project:/opt/dagster/app
       - ./dagster/dagster_home:/opt/dagster/dagster_home
       - ./data:/opt/dagster/data
-    command: ["dagster-daemon", "run"]
+    command: ["dagster-daemon", "run", "-w", "/opt/dagster/dagster_home/workspace.yaml"]
     networks:
       - ecommerce-network
 
   # Dagster Webserver - Web UI
   dagster-webserver:
     build: 
-      context: ../../..
+      context: .
       dockerfile: Dockerfile.dagster
     container_name: ecommerce-dagster-webserver
     depends_on:
@@ -275,12 +276,13 @@ services:
       DAGSTER_POSTGRES_DB: dagster
       DAGSTER_POSTGRES_HOST: postgres
       DAGSTER_POSTGRES_PORT: 5432
+      DAGSTER_POSTGRES_URL: postgresql://dagster:dagster@postgres:5432/dagster
       DAGSTER_HOME: /opt/dagster/dagster_home
     volumes:
-      - ./dagster:/opt/dagster/app
+      - ../dagster/dagster_project:/opt/dagster/app
       - ./dagster/dagster_home:/opt/dagster/dagster_home
       - ./data:/opt/dagster/data
-    command: ["dagster-webserver", "-h", "0.0.0.0", "-p", "3000"]
+    command: ["dagster-webserver", "-h", "0.0.0.0", "-p", "3000", "-w", "/opt/dagster/dagster_home/workspace.yaml"]
     networks:
       - ecommerce-network
 

@@ -1,12 +1,14 @@
 # dagster/dagster_project/assets/data_marts.py
 
-import pandas as pd
-from dagster import asset, AssetIn, DailyPartitionsDefinition, Output, MetadataValue
 from datetime import datetime, timedelta
-from typing import Dict, Any
+from typing import Any, Dict
+
 import boto3
+import pandas as pd
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import *
+
+from dagster import AssetIn, DailyPartitionsDefinition, MetadataValue, Output, asset
 
 # Define partitions for daily processing
 daily_partitions = DailyPartitionsDefinition(start_date="2024-01-01")
@@ -81,7 +83,7 @@ def bronze_events(context) -> Dict[str, Any]:
 
 
 @asset(
-    ins={"bronze_events": AssetIn(partition_mapping=lambda x: x)},
+    ins={"bronze_events": AssetIn()},
     partitions_def=daily_partitions,
     description="Cleaned and validated events in the silver layer",
 )
@@ -191,7 +193,7 @@ def silver_events(context, bronze_events: Dict[str, Any]) -> Dict[str, Any]:
 
 
 @asset(
-    ins={"silver_events": AssetIn(partition_mapping=lambda x: x)},
+    ins={"silver_events": AssetIn()},
     partitions_def=daily_partitions,
     description="Daily sales summary data mart for business analytics",
 )
@@ -322,7 +324,7 @@ def daily_sales_summary(context, silver_events: Dict[str, Any]) -> Dict[str, Any
 
 
 @asset(
-    ins={"silver_events": AssetIn(partition_mapping=lambda x: x)},
+    ins={"silver_events": AssetIn()},
     partitions_def=daily_partitions,
     description="User behavior analytics and customer journey metrics",
 )
@@ -464,8 +466,8 @@ def user_behavior_metrics(context, silver_events: Dict[str, Any]) -> Dict[str, A
 
 @asset(
     ins={
-        "daily_sales_summary": AssetIn(partition_mapping=lambda x: x),
-        "user_behavior_metrics": AssetIn(partition_mapping=lambda x: x),
+        "daily_sales_summary": AssetIn(),
+        "user_behavior_metrics": AssetIn(),
     },
     partitions_def=daily_partitions,
     description="Product performance analytics combining sales and user behavior data",
@@ -621,8 +623,8 @@ def product_analytics(
 # Data quality checks
 @asset(
     ins={
-        "bronze_events": AssetIn(partition_mapping=lambda x: x),
-        "silver_events": AssetIn(partition_mapping=lambda x: x),
+        "bronze_events": AssetIn(),
+        "silver_events": AssetIn(),
     },
     partitions_def=daily_partitions,
     description="Data quality monitoring and validation checks",
