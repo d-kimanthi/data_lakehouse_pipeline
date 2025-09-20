@@ -4,14 +4,18 @@ echo "Cleaning up E-commerce Analytics Platform..."
 
 # Stop and remove Docker containers
 echo "Stopping Docker containers..."
-docker-compose down -v
+cd local
+docker compose down -v
+cd ..
 
 # Remove Docker images (optional)
 read -p "Do you want to remove Docker images as well? (y/N): " -n 1 -r
 echo
 if [[ $REPLY =~ ^[Yy]$ ]]; then
     echo "Removing Docker images..."
-    docker-compose down --rmi all
+    cd local
+    docker compose down --rmi all
+    cd ..
 fi
 
 # Clean up AWS resources (if deployed)

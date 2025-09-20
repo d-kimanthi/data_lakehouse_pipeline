@@ -155,8 +155,7 @@ class EcommerceEventGenerator:
 
     def __init__(self):
         self.fake = Faker()
-        self.products = self._generate_product_catalog()
-        self.users = self._generate_user_base()
+        # Define categories first, before generating products and users
         self.categories = [
             "Electronics",
             "Clothing",
@@ -164,6 +163,8 @@ class EcommerceEventGenerator:
             "Sports",
             "Books",
         ]
+        self.products = self._generate_product_catalog()
+        self.users = self._generate_user_base()
 
     def _generate_product_catalog(self) -> List[Dict[str, Any]]:
         """Generate a realistic product catalog"""

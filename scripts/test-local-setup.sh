@@ -10,13 +10,13 @@ ISSUES=false
 echo "📋 Checking required files..."
 
 required_files=(
-    "terraform/environments/local/docker-compose.local.yml"
-    "terraform/environments/local/.env.local"
+    "local/docker-compose.yml"
+    "local/.env"
     "Dockerfile.dagster"
     "scripts/start-local.sh"
     "scripts/stop-local.sh"
-    "monitoring/prometheus/prometheus.yml"
-    "monitoring/grafana/datasources/prometheus.yml"
+    "local/monitoring/prometheus/prometheus.yml"
+    "local/monitoring/grafana/datasources/prometheus.yml"
 )
 
 missing_files=()
@@ -65,14 +65,15 @@ fi
 # Test 4: Validate Docker Compose file
 echo ""
 echo "📝 Validating Docker Compose configuration..."
-cd terraform/environments/local
-if docker compose -f docker-compose.local.yml config > /dev/null 2>&1; then
+cd local
+if docker compose config > /dev/null 2>&1; then
     echo "✅ Docker Compose configuration is valid"
 else
     echo "❌ Docker Compose configuration has errors"
-    docker compose -f docker-compose.local.yml config
+    docker compose config
     ISSUES=true
 fi
+cd ..
 
 # Test 5: Check required directories
 echo ""

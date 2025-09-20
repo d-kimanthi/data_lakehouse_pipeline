@@ -85,6 +85,7 @@ dagster.yaml
 metastore_db/
 derby.log
 spark-warehouse/
+*.jar
 
 # Kafka/Zookeeper data
 kafka-logs/

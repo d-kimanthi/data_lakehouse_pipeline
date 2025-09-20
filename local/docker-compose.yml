@@ -1,3 +1,5 @@
+# Fixed version of your docker-compose.yml with Spark improvements
+
 services:
   # PostgreSQL - Database for Dagster metadata
   postgres:
@@ -77,11 +79,11 @@ services:
     depends_on:
       - kafka
     ports:
-      - "8081:8081"
+      - "8083:8081"
     environment:
       SCHEMA_REGISTRY_HOST_NAME: schema-registry
       SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: 'kafka:29092'
-      SCHEMA_REGISTRY_LISTENERS: http://0.0.0.0:8081
+      SCHEMA_REGISTRY_LISTENERS: http://0.0.0.0:8083
     networks:
       - ecommerce-network
 
@@ -97,7 +99,7 @@ services:
     environment:
       KAFKA_CLUSTERS_0_NAME: local
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
-      KAFKA_CLUSTERS_0_SCHEMAREGISTRY: http://schema-registry:8081
+      KAFKA_CLUSTERS_0_SCHEMAREGISTRY: http://schema-registry:8083
     networks:
       - ecommerce-network
 
@@ -130,6 +132,7 @@ services:
       - minio
     entrypoint: >
       /bin/sh -c "
+      sleep 10;
       /usr/bin/mc alias set myminio http://minio:9000 minioadmin minioadmin;
       /usr/bin/mc mb myminio/bronze-data --ignore-existing;
       /usr/bin/mc mb myminio/silver-data --ignore-existing;
@@ -137,14 +140,15 @@ services:
       /usr/bin/mc mb myminio/logs-data --ignore-existing;
       /usr/bin/mc mb myminio/scripts-data --ignore-existing;
       /usr/bin/mc mb myminio/checkpoint-data --ignore-existing;
+      echo 'MinIO buckets created successfully';
       exit 0;
       "
     networks:
       - ecommerce-network
 
-  # Spark Master
+  # Spark Master - FIXED VERSION
   spark-master:
-    image: bitnami/spark:3.5
+    image: bitnami/spark:3.5.0
     container_name: ecommerce-spark-master
     environment:
       - SPARK_MODE=master
@@ -153,21 +157,35 @@ services:
       - SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED=no
       - SPARK_SSL_ENABLED=no
       - SPARK_USER=spark
+      - SPARK_MASTER_HOST=spark-master
+      - SPARK_MASTER_PORT_NUMBER=7077
+      - SPARK_MASTER_WEBUI_PORT=8080
+      # Additional environment variables for better stability
+      - JAVA_HOME=/opt/bitnami/java
+      - SPARK_HOME=/opt/bitnami/spark
     ports:
       - "7080:8080"  # Spark Master UI
       - "7077:7077"  # Spark Master port
     volumes:
-      - ./jars:/opt/bitnami/spark/jars
-      - ./streaming:/opt/bitnami/spark/work-dir
+      - ./jars:/opt/bitnami/spark/jars-extra:rw
+      - ./streaming:/opt/bitnami/spark/work-dir:rw
+      - ./data:/opt/bitnami/spark/data:rw
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080"] 
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
     networks:
       - ecommerce-network
 
-  # Spark Worker
+  # Spark Worker - FIXED VERSION
   spark-worker:
-    image: bitnami/spark:3.5
+    image: bitnami/spark:3.5.0
     container_name: ecommerce-spark-worker
     depends_on:
-      - spark-master
+      spark-master:
+        condition: service_healthy
     environment:
       - SPARK_MODE=worker
       - SPARK_MASTER_URL=spark://spark-master:7077
@@ -178,9 +196,39 @@ services:
       - SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED=no
       - SPARK_SSL_ENABLED=no
       - SPARK_USER=spark
+      - SPARK_WORKER_WEBUI_PORT=8081
+      # Additional environment variables
+      - JAVA_HOME=/opt/bitnami/java
+      - SPARK_HOME=/opt/bitnami/spark
+    ports:
+      - "8081:8081"  # Worker UI
     volumes:
-      - ./jars:/opt/bitnami/spark/jars
-      - ./streaming:/opt/bitnami/spark/work-dir
+      - ./jars:/opt/bitnami/spark/jars-extra:rw
+      - ./streaming:/opt/bitnami/spark/work-dir:rw
+      - ./data:/opt/bitnami/spark/data:rw
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    networks:
+      - ecommerce-network
+
+  # Optional: Spark History Server for job monitoring
+  spark-history:
+    image: bitnami/spark:3.5.0
+    container_name: ecommerce-spark-history
+    depends_on:
+      - spark-master
+    environment:
+      - SPARK_MODE=history
+      - SPARK_HISTORY_UI_PORT=18080
+      - SPARK_HISTORY_FS_LOG_DIRECTORY=/opt/bitnami/spark/logs
+    ports:
+      - "18080:18080"
+    volumes:
+      - ./spark-logs:/opt/bitnami/spark/logs:rw
     networks:
       - ecommerce-network
 
@@ -191,7 +239,8 @@ services:
       dockerfile: Dockerfile.dagster
     container_name: ecommerce-dagster-daemon
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
     environment:
       DAGSTER_POSTGRES_USER: dagster
       DAGSTER_POSTGRES_PASSWORD: dagster
@@ -214,8 +263,10 @@ services:
       dockerfile: Dockerfile.dagster
     container_name: ecommerce-dagster-webserver
     depends_on:
-      - postgres
-      - dagster-daemon
+      postgres:
+        condition: service_healthy
+      dagster-daemon:
+        condition: service_started
     ports:
       - "3000:3000"
     environment:
@@ -237,11 +288,18 @@ services:
   jupyter:
     image: jupyter/pyspark-notebook:latest
     container_name: ecommerce-jupyter
+    depends_on:
+      - spark-master
     ports:
       - "8888:8888"
     environment:
       JUPYTER_ENABLE_LAB: "yes"
       JUPYTER_TOKEN: "ecommerce-analytics"
+      # Spark configuration for Jupyter
+      SPARK_MASTER: "spark://spark-master:7077"
+      SPARK_DRIVER_HOST: "jupyter"
+      SPARK_DRIVER_PORT: "7001"
+      SPARK_DRIVER_BLOCK_MANAGER_PORT: "7002"
     volumes:
       - ./notebooks:/home/jovyan/work
       - ./data:/home/jovyan/data

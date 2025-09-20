@@ -123,13 +123,13 @@ The startup script will:
 
 ```bash
 # Navigate to local environment
-cd terraform/environments/local
+cd local
 
 # Start services
-docker compose -f docker-compose.local.yml up -d
+docker compose up -d
 
 # Check service status
-docker compose -f docker-compose.local.yml ps
+docker compose ps
 ```
 
 ### Step 3: Service Verification
@@ -189,13 +189,13 @@ curl http://localhost:3000/graphql
 
 Key configuration files:
 
-- `terraform/environments/local/.env.local` - Environment-specific settings
-- `docker-compose.local.yml` - Service definitions
-- `monitoring/prometheus/prometheus.yml` - Monitoring configuration
+- `local/.env` - Environment-specific settings
+- `local/docker-compose.yml` - Service definitions
+- `local/monitoring/prometheus/prometheus.yml` - Monitoring configuration
 
 ### Resource Allocation
 
-To adjust resource allocation, modify `docker-compose.local.yml`:
+To adjust resource allocation, modify `local/docker-compose.yml`:
 
 ```yaml
 services:
@@ -207,7 +207,7 @@ services:
 
 ### Port Configuration
 
-Default ports (can be modified in docker-compose.local.yml):
+Default ports (can be modified in local/docker-compose.yml):
 
 ```
 PostgreSQL: 5432
@@ -275,10 +275,11 @@ docker system df
 docker system prune # if needed
 
 # Check logs
-docker compose -f terraform/environments/local/docker-compose.local.yml logs
+cd local
+docker compose logs
 
 # Restart specific service
-docker compose -f terraform/environments/local/docker-compose.local.yml restart kafka
+docker compose restart kafka
 ```
 
 #### Port Conflicts
@@ -307,7 +308,8 @@ docker stats
 ```bash
 # Recreate network
 docker network rm ecommerce-network
-docker compose -f terraform/environments/local/docker-compose.local.yml up -d
+cd local
+docker compose up -d
 ```
 
 ### Service-Specific Troubleshooting
@@ -369,11 +371,11 @@ curl http://localhost:8081/api/v1/applications
 ### Manual Shutdown
 
 ```bash
-cd terraform/environments/local
-docker compose -f docker-compose.local.yml down
+cd local
+docker compose down
 
 # With volume cleanup
-docker compose -f docker-compose.local.yml down -v
+docker compose down -v
 ```
 
 ### Clean Shutdown (Remove Everything)
