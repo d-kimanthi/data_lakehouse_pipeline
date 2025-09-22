@@ -498,10 +498,21 @@ class KafkaEventProducer:
         except Exception as e:
             logger.error(f"Error sending event: {e}")
 
-    def generate_and_send_events(self, num_events: int = 100, delay: float = 0.1):
+    def generate_and_send_events(
+        self, num_events: int = 100, delay: float = 0.1, continuous: bool = False
+    ):
         """Generate and send multiple events"""
-        logger.info(f"Starting to generate {num_events} events...")
+        if continuous:
+            logger.info(
+                "Starting continuous event generation (press Ctrl+C to stop)..."
+            )
+            self._generate_events_continuously(delay)
+        else:
+            logger.info(f"Starting to generate {num_events} events...")
+            self._generate_events_batch(num_events, delay)
 
+    def _generate_events_batch(self, num_events: int, delay: float):
+        """Generate a fixed number of events"""
         for i in range(num_events):
             try:
                 event = self.event_generator.generate_event()
@@ -525,6 +536,49 @@ class KafkaEventProducer:
         self.producer.flush()
         logger.info(f"Finished sending {num_events} events")
 
+    def _generate_events_continuously(self, delay: float):
+        """Generate events continuously until interrupted"""
+        import time
+
+        event_count = 0
+        start_time = time.time()
+        last_report_time = start_time
+
+        try:
+            while True:
+                try:
+                    event = self.event_generator.generate_event()
+                    self.send_event(event)
+                    event_count += 1
+
+                    current_time = time.time()
+
+                    # Report progress every 60 seconds
+                    if current_time - last_report_time >= 60:
+                        elapsed_minutes = (current_time - start_time) / 60
+                        events_per_minute = (
+                            event_count / elapsed_minutes if elapsed_minutes > 0 else 0
+                        )
+                        logger.info(
+                            f"Generated {event_count} events total ({events_per_minute:.1f} events/min)"
+                        )
+                        last_report_time = current_time
+
+                    if delay > 0:
+                        time.sleep(delay)
+
+                except Exception as e:
+                    logger.error(f"Error generating event: {e}")
+                    continue
+
+        except KeyboardInterrupt:
+            total_elapsed = (time.time() - start_time) / 60
+            logger.info(
+                f"Stopping continuous generation. Generated {event_count} events in {total_elapsed:.1f} minutes"
+            )
+        finally:
+            self.producer.flush()
+
     def close(self):
         """Close the producer"""
         self.producer.close()
@@ -541,10 +595,19 @@ if __name__ == "__main__":
         "--topic", default="raw-events", help="Kafka topic to send events to"
     )
     parser.add_argument(
-        "--num-events", type=int, default=1000, help="Number of events to generate"
+        "--num-events",
+        type=int,
+        default=1000,
+        help="Number of events to generate (ignored in continuous mode)",
     )
     parser.add_argument(
         "--delay", type=float, default=0.1, help="Delay between events in seconds"
+    )
+    parser.add_argument(
+        "--continuous",
+        "-c",
+        action="store_true",
+        help="Run continuously until interrupted (ignores --num-events)",
     )
 
     args = parser.parse_args()
@@ -552,6 +615,6 @@ if __name__ == "__main__":
     producer = KafkaEventProducer(args.bootstrap_servers, args.topic)
 
     try:
-        producer.generate_and_send_events(args.num_events, args.delay)
+        producer.generate_and_send_events(args.num_events, args.delay, args.continuous)
     finally:
         producer.close()

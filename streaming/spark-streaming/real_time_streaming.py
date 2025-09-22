@@ -22,12 +22,38 @@ class EcommerceStreamProcessor:
 
     def __init__(self, app_name: str = "ecommerce-streaming"):
         self.app_name = app_name
+
+        # Detect execution environment (local vs cluster)
+        self.is_cluster_mode = self._detect_cluster_mode()
+        logger.info(f"Running in {'cluster' if self.is_cluster_mode else 'local'} mode")
+
         self.spark = self._create_spark_session()
         self._setup_schemas()
         self._create_iceberg_tables()
 
+    def _detect_cluster_mode(self) -> bool:
+        """Detect if running in cluster mode by checking for Docker environment"""
+        # Check if we're running inside a Docker container
+        return os.path.exists("/.dockerenv") or os.environ.get("SPARK_MODE") == "master"
+
     def _create_spark_session(self) -> SparkSession:
         """Create Spark session with Iceberg and Kafka configurations"""
+
+        # Configure endpoints based on execution mode
+        if self.is_cluster_mode:
+            # Use Docker service names for cluster mode
+            kafka_bootstrap = "ecommerce-kafka:9092"
+            minio_endpoint = "http://ecommerce-minio:9000"
+            logger.info("Using cluster networking (Docker service names)")
+        else:
+            # Use localhost for local mode
+            kafka_bootstrap = "localhost:9092"
+            minio_endpoint = "http://localhost:9000"
+            logger.info("Using local networking (localhost)")
+
+        # Store for later use
+        self.kafka_bootstrap = kafka_bootstrap
+        self.minio_endpoint = minio_endpoint
 
         # For local development - using MinIO as S3
         spark = (
@@ -52,11 +78,11 @@ class EcommerceStreamProcessor:
             .config(
                 "spark.sql.catalog.iceberg.warehouse", "s3a://bronze/iceberg-warehouse/"
             )
-            # MinIO configuration for local development
+            # MinIO configuration - endpoint determined by execution mode
             .config(
                 "spark.hadoop.fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem"
             )
-            .config("spark.hadoop.fs.s3a.endpoint", "http://localhost:9000")
+            .config("spark.hadoop.fs.s3a.endpoint", self.minio_endpoint)
             .config("spark.hadoop.fs.s3a.access.key", "minioadmin")
             .config("spark.hadoop.fs.s3a.secret.key", "minioadmin")
             .config("spark.hadoop.fs.s3a.path.style.access", "true")
@@ -205,7 +231,7 @@ class EcommerceStreamProcessor:
         # Read from Kafka
         kafka_df = (
             self.spark.readStream.format("kafka")
-            .option("kafka.bootstrap.servers", "localhost:9092")
+            .option("kafka.bootstrap.servers", self.kafka_bootstrap)
             .option("subscribe", "raw-events,page-views,purchases,user-sessions")
             .option("startingOffsets", "latest")
             .option("failOnDataLoss", "false")
