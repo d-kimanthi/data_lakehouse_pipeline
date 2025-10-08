@@ -1,32 +1,23 @@
-# Import Spark-based batch processing assets
-from assets.spark_batch_assets import (
-    gold_daily_customer_analytics,
-    gold_daily_sales_summary,
-    gold_product_analytics,
-    silver_data_quality_report,
-    streaming_health_monitor,
-)
+"""
+E-Commerce Streaming Analytics Dagster Project
+
+This package contains Dagster assets and jobs for orchestrating
+the silver to gold data transformations using Spark.
+"""
 
 from dagster import Definitions
+from dagster.dagster_project.assets import silver_to_gold_assets
+from dagster.dagster_project.data_quality import data_quality_checks
+from dagster.dagster_project.jobs import silver_to_gold_jobs, silver_to_gold_schedules
+from dagster.dagster_project.resources import spark_cluster_resource
 
-# Define all assets using the new Spark-only architecture
+# Define all assets, jobs, schedules, checks and resources
 defs = Definitions(
-    assets=[
-        # Spark batch processing assets for Gold layer analytics
-        gold_daily_customer_analytics,
-        gold_daily_sales_summary,
-        gold_product_analytics,
-        # Data quality and monitoring assets
-        silver_data_quality_report,
-        streaming_health_monitor,
-    ],
-    jobs=[
-        # Define jobs in future if needed for scheduling multiple assets together
-    ],
-    schedules=[
-        # Asset-based schedules will be defined individually in the assets themselves
-    ],
+    assets=silver_to_gold_assets,
+    jobs=silver_to_gold_jobs,
+    schedules=silver_to_gold_schedules,
+    asset_checks=data_quality_checks,
     resources={
-        # Resources can be configured here if needed for shared configurations
+        "spark_cluster": spark_cluster_resource,
     },
 )

@@ -85,10 +85,9 @@ services:
     entrypoint: >
       /bin/sh -c "
       until (/usr/bin/mc alias set myminio http://minio:9000 minioadmin minioadmin) do echo 'Waiting for MinIO...' && sleep 1; done;
-      /usr/bin/mc mb myminio/ecommerce-data-lake;
-      /usr/bin/mc mb myminio/checkpoints;
-      /usr/bin/mc mb myminio/logs;
-      /usr/bin/mc mb myminio/scripts;
+      /usr/bin/mc mb myminio/data-lake;
+      echo 'Created main bucket: data-lake with organized subfolder structure';
+      echo 'Structure: data-lake/{warehouse,bronze,silver,gold,checkpoints,logs,scripts}/';
       exit 0;
       "
 

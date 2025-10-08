@@ -1,0 +1,63 @@
+# Dockerfile for Dagster with PySpark support
+FROM python:3.11-slim
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    curl \
+    procps \
+    openjdk-21-jre-headless \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set Java environment
+ENV JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64
+ENV PATH="${JAVA_HOME}/bin:${PATH}"
+
+# Set working directory
+WORKDIR /opt/dagster
+
+# Copy requirements and install Python dependencies
+COPY requirements.dagster.txt /tmp/requirements.dagster.txt
+RUN pip install --no-cache-dir -r /tmp/requirements.dagster.txt
+
+# Create dagster user
+RUN useradd -m -s /bin/bash dagster
+RUN chown -R dagster:dagster /opt/dagster
+
+# Install Spark (lightweight installation)
+ENV SPARK_VERSION=3.5.0
+ENV HADOOP_VERSION=3
+ENV SPARK_HOME=/opt/spark
+ENV PATH=$PATH:$SPARK_HOME/bin:$SPARK_HOME/sbin
+
+RUN curl -L "https://archive.apache.org/dist/spark/spark-${SPARK_VERSION}/spark-${SPARK_VERSION}-bin-hadoop${HADOOP_VERSION}.tgz" \
+    | tar xz -C /opt/ \
+    && mv /opt/spark-${SPARK_VERSION}-bin-hadoop${HADOOP_VERSION} ${SPARK_HOME} \
+    && chown -R dagster:dagster ${SPARK_HOME}
+
+# Copy additional JARs for Iceberg and S3 support
+COPY --chown=dagster:dagster jars/*.jar ${SPARK_HOME}/jars/
+
+# Set PySpark environment
+ENV PYSPARK_PYTHON=python3
+ENV PYSPARK_DRIVER_PYTHON=python3
+
+# Create directories for data and logs
+RUN mkdir -p /opt/dagster/data /opt/dagster/logs \
+    && chown -R dagster:dagster /opt/dagster
+
+# Switch to dagster user
+USER dagster
+
+# Set environment variables for Dagster
+ENV DAGSTER_HOME=/opt/dagster/dagster_home
+ENV PYTHONPATH="${PYTHONPATH}:/opt/dagster/app"
+
+# Create a health check script
+RUN echo '#!/bin/bash\ncurl -f http://localhost:3000/health || exit 1' > /tmp/health_check.sh \
+    && chmod +x /tmp/health_check.sh
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD /tmp/health_check.sh
+
+# Default command (will be overridden in docker-compose)
+CMD ["dagster-webserver", "-h", "0.0.0.0", "-p", "3000"]

@@ -21,6 +21,24 @@ services:
     networks:
       - ecommerce-network
 
+  # pgAdmin - PostgreSQL administration and development platform
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: ecommerce-pgadmin
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "5050:80"
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@ecommerce.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    networks:
+      - ecommerce-network
+
   # Zookeeper - Required for Kafka
   zookeeper:
     image: confluentinc/cp-zookeeper:7.4.0
@@ -124,7 +142,7 @@ services:
     networks:
       - ecommerce-network
 
-  # MinIO Client - Initialize buckets
+  # MinIO Client - Initialize data lake bucket
   minio-init:
     image: minio/mc:latest
     container_name: ecommerce-minio-init
@@ -134,13 +152,9 @@ services:
       /bin/sh -c "
       sleep 10;
       /usr/bin/mc alias set myminio http://minio:9000 minioadmin minioadmin;
-      /usr/bin/mc mb myminio/bronze-data --ignore-existing;
-      /usr/bin/mc mb myminio/silver-data --ignore-existing;
-      /usr/bin/mc mb myminio/gold-data --ignore-existing;
-      /usr/bin/mc mb myminio/logs-data --ignore-existing;
-      /usr/bin/mc mb myminio/scripts-data --ignore-existing;
-      /usr/bin/mc mb myminio/checkpoint-data --ignore-existing;
-      echo 'MinIO buckets created successfully';
+      /usr/bin/mc mb myminio/data-lake --ignore-existing;
+      echo 'MinIO data-lake bucket created successfully with organized subfolder structure';
+      echo 'Structure: data-lake/{warehouse,bronze,silver,gold,checkpoints,logs,scripts}/';
       exit 0;
       "
     networks:
@@ -171,7 +185,7 @@ services:
       - ./streaming:/opt/bitnami/spark/work-dir:rw
       - ./data:/opt/bitnami/spark/data:rw
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080"] 
+      test: ["CMD", "curl", "-f", "http://localhost:7080"] 
       interval: 30s
       timeout: 10s
       retries: 5
@@ -185,7 +199,7 @@ services:
     container_name: ecommerce-spark-worker
     depends_on:
       spark-master:
-        condition: service_healthy
+        condition: service_started
     environment:
       - SPARK_MODE=worker
       - SPARK_MASTER_URL=spark://spark-master:7077
@@ -236,7 +250,7 @@ services:
   dagster-daemon:
     build: 
       context: .
-      dockerfile: Dockerfile.dagster
+      dockerfile: Dockerfile.dagster.pyspark
     container_name: ecommerce-dagster-daemon
     depends_on:
       postgres:
@@ -249,10 +263,16 @@ services:
       DAGSTER_POSTGRES_PORT: 5432
       DAGSTER_POSTGRES_URL: postgresql://dagster:dagster@postgres:5432/dagster
       DAGSTER_HOME: /opt/dagster/dagster_home
+      # Java and Spark environment variables
+      JAVA_HOME: /usr/lib/jvm/java-21-openjdk-arm64
+      SPARK_HOME: /opt/spark
+      PYSPARK_PYTHON: python3
+      PYSPARK_DRIVER_PYTHON: python3
     volumes:
-      - ../dagster/dagster_project:/opt/dagster/app
+      - ../:/opt/dagster/app
       - ./dagster/dagster_home:/opt/dagster/dagster_home
       - ./data:/opt/dagster/data
+      - ../streaming:/opt/dagster/streaming
     command: ["dagster-daemon", "run", "-w", "/opt/dagster/dagster_home/workspace.yaml"]
     networks:
       - ecommerce-network
@@ -261,7 +281,7 @@ services:
   dagster-webserver:
     build: 
       context: .
-      dockerfile: Dockerfile.dagster
+      dockerfile: Dockerfile.dagster.pyspark
     container_name: ecommerce-dagster-webserver
     depends_on:
       postgres:
@@ -278,88 +298,131 @@ services:
       DAGSTER_POSTGRES_PORT: 5432
       DAGSTER_POSTGRES_URL: postgresql://dagster:dagster@postgres:5432/dagster
       DAGSTER_HOME: /opt/dagster/dagster_home
+      # Java and Spark environment variables
+      JAVA_HOME: /usr/lib/jvm/java-21-openjdk-arm64
+      SPARK_HOME: /opt/spark
+      PYSPARK_PYTHON: python3
+      PYSPARK_DRIVER_PYTHON: python3
     volumes:
-      - ../dagster/dagster_project:/opt/dagster/app
+      - ../:/opt/dagster/app
       - ./dagster/dagster_home:/opt/dagster/dagster_home
       - ./data:/opt/dagster/data
+      - ./streaming:/opt/dagster/streaming
     command: ["dagster-webserver", "-h", "0.0.0.0", "-p", "3000", "-w", "/opt/dagster/dagster_home/workspace.yaml"]
     networks:
       - ecommerce-network
 
-  # Jupyter Notebook - Data exploration
-  jupyter:
-    image: jupyter/pyspark-notebook:latest
-    container_name: ecommerce-jupyter
-    depends_on:
-      - spark-master
+  # Iceberg REST Catalog - Metadata service for Iceberg tables
+  iceberg-rest:
+    image: tabulario/iceberg-rest:0.7.0
+    container_name: ecommerce-iceberg-rest
     ports:
-      - "8888:8888"
+      - "8181:8181"
     environment:
-      JUPYTER_ENABLE_LAB: "yes"
-      JUPYTER_TOKEN: "ecommerce-analytics"
-      # Spark configuration for Jupyter
-      SPARK_MASTER: "spark://spark-master:7077"
-      SPARK_DRIVER_HOST: "jupyter"
-      SPARK_DRIVER_PORT: "7001"
-      SPARK_DRIVER_BLOCK_MANAGER_PORT: "7002"
+      - CATALOG_WAREHOUSE=s3a://data-lake/warehouse/
+      - CATALOG_IO__IMPL=org.apache.iceberg.aws.s3.S3FileIO
+      - CATALOG_S3_ENDPOINT=http://minio:9000
+      - CATALOG_S3_ACCESS__KEY__ID=minioadmin
+      - CATALOG_S3_SECRET__ACCESS__KEY=minioadmin
+      - CATALOG_S3_PATH__STYLE__ACCESS=true
+    depends_on:
+      - minio
+    networks:
+      - ecommerce-network
+
+  # Trino - Distributed SQL query engine for Iceberg
+  trino:
+    image: trinodb/trino:435
+    container_name: ecommerce-trino
+    ports:
+      - "8084:8080"
     volumes:
-      - ./notebooks:/home/jovyan/work
-      - ./data:/home/jovyan/data
-      - ./requirements.txt:/tmp/requirements.txt
+      - ./trino/catalog:/etc/trino/catalog
+      - ./trino/config.properties:/etc/trino/config.properties
+    depends_on:
+      - minio
+      - iceberg-rest
+    networks:
+      - ecommerce-network
+    environment:
+      - JAVA_OPTS=-Xmx2G
+
+  # Superset - Data visualization and exploration platform
+  superset-db:
+    image: postgres:15
+    container_name: ecommerce-superset-db
+    environment:
+      POSTGRES_DB: superset
+      POSTGRES_USER: superset
+      POSTGRES_PASSWORD: superset
+    ports:
+      - "5434:5432"
+    volumes:
+      - superset_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U superset"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    networks:
+      - ecommerce-network
+
+  superset:
+    image: apache/superset:3.0.0
+    container_name: ecommerce-superset
+    depends_on:
+      superset-db:
+        condition: service_healthy
+      trino:
+        condition: service_started
+    ports:
+      - "8088:8088"
+    environment:
+      - SUPERSET_SECRET_KEY=your_secret_key_here_change_in_production
+      - SUPERSET_ENV=production
+      - DATABASE_DIALECT=postgresql
+      - DATABASE_USER=superset
+      - DATABASE_PASSWORD=superset
+      - DATABASE_HOST=superset-db
+      - DATABASE_PORT=5432
+      - DATABASE_DB=superset
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    volumes:
+      - superset_home:/app/superset_home
+      - ./superset/superset_config.py:/app/pythonpath/superset_config.py
     command: >
       bash -c "
-      pip install -r /tmp/requirements.txt &&
-      start-notebook.py --NotebookApp.token='ecommerce-analytics' --NotebookApp.password='' --ip=0.0.0.0
+      superset db upgrade &&
+      superset fab create-admin --username admin --firstname Admin --lastname User --email admin@superset.com --password admin &&
+      superset init &&
+      gunicorn --bind 0.0.0.0:8088 --timeout 120 --workers 4 'superset.app:create_app()'
       "
     networks:
       - ecommerce-network
 
-  # Prometheus - Metrics collection
-  prometheus:
-    image: prom/prometheus:latest
-    container_name: ecommerce-prometheus
+  # Redis - Cache for Superset
+  redis:
+    image: redis:7-alpine
+    container_name: ecommerce-redis
     ports:
-      - "9090:9090"
+      - "6379:6379"
     volumes:
-      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
-      - prometheus_data:/prometheus
-    command:
-      - '--config.file=/etc/prometheus/prometheus.yml'
-      - '--storage.tsdb.path=/prometheus'
-      - '--web.console.libraries=/etc/prometheus/console_libraries'
-      - '--web.console.templates=/etc/prometheus/consoles'
-      - '--storage.tsdb.retention.time=200h'
-      - '--web.enable-lifecycle'
+      - redis_data:/data
     networks:
       - ecommerce-network
 
-  # Grafana - Monitoring dashboards
-  grafana:
-    image: grafana/grafana:latest
-    container_name: ecommerce-grafana
-    depends_on:
-      - prometheus
-    ports:
-      - "3001:3000"
-    environment:
-      GF_SECURITY_ADMIN_USER: admin
-      GF_SECURITY_ADMIN_PASSWORD: admin
-      GF_USERS_ALLOW_SIGN_UP: false
-    volumes:
-      - grafana_data:/var/lib/grafana
-      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards
-      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources
-    networks:
-      - ecommerce-network
 
 volumes:
   postgres_data:
+  pgadmin_data:
   zookeeper_data:
   zookeeper_logs:
   kafka_data:
   minio_data:
-  prometheus_data:
-  grafana_data:
+  superset_db_data:
+  superset_home:
+  redis_data:
 
 networks:
   ecommerce-network:

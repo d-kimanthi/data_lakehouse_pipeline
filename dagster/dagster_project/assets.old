@@ -1,0 +1,226 @@
+"""
+Dagster assets for silver to gold layer transformations.
+
+These assets represent the business logic for creating gold layer tables
+from silver layer data using Spark batch processing.
+"""
+
+from datetime import datetime, timedelta
+
+from resources import SparkClusterResource
+
+from dagster import (
+    AssetExecutionContext,
+    MaterializeResult,
+    MetadataValue,
+    asset,
+    get_dagster_logger,
+)
+
+
+@asset(
+    name="daily_customer_analytics",
+    description="Daily customer analytics aggregated from silver layer page views and purchases",
+    group_name="gold_layer",
+    compute_kind="spark",
+)
+def daily_customer_analytics_asset(
+    context: AssetExecutionContext,
+    spark_cluster: SparkClusterResource,
+) -> MaterializeResult:
+    """
+    Create daily customer analytics in the gold layer.
+
+    Processes silver layer page_views and purchases tables to create
+    comprehensive customer analytics including segments, revenue, and engagement metrics.
+    """
+    logger = get_dagster_logger()
+
+    # Get the target date (default to yesterday)
+    target_date = (
+        context.partition_key
+        if context.has_partition_key
+        else (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+    )
+
+    logger.info(f"Processing daily customer analytics for date: {target_date}")
+
+    # Submit Spark job for customer analytics
+    job_result = spark_cluster.submit_spark_job(
+        script_path="/opt/dagster/streaming/spark-streaming/batch_customer_analytics.py",
+        args={"date": target_date},
+        job_name=f"daily_customer_analytics_{target_date}",
+        executor_memory="2g",
+        executor_cores=2,
+        driver_memory="1g",
+    )
+
+    # Extract metrics from job results
+    results = job_result.get("results", {})
+    total_customers = results.get("total_customers", 0)
+    high_value_customers = results.get("high_value_customers", 0)
+    total_revenue = results.get("total_revenue", 0.0)
+
+    logger.info(
+        f"Customer analytics completed - "
+        f"Customers: {total_customers}, "
+        f"High Value: {high_value_customers}, "
+        f"Revenue: ${total_revenue:,.2f}"
+    )
+
+    return MaterializeResult(
+        metadata={
+            "total_customers": MetadataValue.int(total_customers),
+            "high_value_customers": MetadataValue.int(high_value_customers),
+            "total_revenue": MetadataValue.float(total_revenue),
+            "target_date": MetadataValue.text(target_date),
+            "job_status": MetadataValue.text(job_result.get("status", "unknown")),
+            "spark_job_logs": MetadataValue.text(
+                job_result.get("stdout", "")[:1000] + "..."
+                if len(job_result.get("stdout", "")) > 1000
+                else job_result.get("stdout", "")
+            ),
+        }
+    )
+
+
+@asset(
+    name="daily_sales_summary",
+    description="Daily sales summary aggregated from silver layer purchases and products",
+    group_name="gold_layer",
+    compute_kind="spark",
+)
+def daily_sales_summary_asset(
+    context: AssetExecutionContext,
+    spark_cluster: SparkClusterResource,
+) -> MaterializeResult:
+    """
+    Create daily sales summary in the gold layer.
+
+    Processes silver layer purchases and products tables to create
+    comprehensive sales analytics including revenue, order patterns, and product performance.
+    """
+    logger = get_dagster_logger()
+
+    # Get the target date (default to yesterday)
+    target_date = (
+        context.partition_key
+        if context.has_partition_key
+        else (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+    )
+
+    logger.info(f"Processing daily sales summary for date: {target_date}")
+
+    # Submit Spark job for sales summary
+    job_result = spark_cluster.submit_spark_job(
+        script_path="/opt/dagster/streaming/spark-streaming/batch_sales_summary.py",
+        args={"date": target_date},
+        job_name=f"daily_sales_summary_{target_date}",
+        executor_memory="2g",
+        executor_cores=2,
+        driver_memory="1g",
+    )
+
+    # Extract metrics from job results
+    results = job_result.get("results", {})
+    total_orders = results.get("total_orders", 0)
+    total_revenue = results.get("total_revenue", 0.0)
+    avg_order_value = results.get("avg_order_value", 0.0)
+    unique_customers = results.get("unique_customers", 0)
+
+    logger.info(
+        f"Sales summary completed - "
+        f"Orders: {total_orders}, "
+        f"Revenue: ${total_revenue:,.2f}, "
+        f"AOV: ${avg_order_value:,.2f}, "
+        f"Customers: {unique_customers}"
+    )
+
+    return MaterializeResult(
+        metadata={
+            "total_orders": MetadataValue.int(total_orders),
+            "total_revenue": MetadataValue.float(total_revenue),
+            "avg_order_value": MetadataValue.float(avg_order_value),
+            "unique_customers": MetadataValue.int(unique_customers),
+            "target_date": MetadataValue.text(target_date),
+            "job_status": MetadataValue.text(job_result.get("status", "unknown")),
+            "spark_job_logs": MetadataValue.text(
+                job_result.get("stdout", "")[:1000] + "..."
+                if len(job_result.get("stdout", "")) > 1000
+                else job_result.get("stdout", "")
+            ),
+        }
+    )
+
+
+@asset(
+    name="product_performance_analytics",
+    description="Product performance analytics from silver layer data",
+    group_name="gold_layer",
+    compute_kind="spark",
+    deps=[daily_sales_summary_asset],  # Depends on sales summary being completed
+)
+def product_performance_analytics_asset(
+    context: AssetExecutionContext,
+    spark_cluster: SparkClusterResource,
+) -> MaterializeResult:
+    """
+    Create product performance analytics in the gold layer.
+
+    Analyzes product views, purchases, and conversion rates to provide
+    insights into product performance and trends.
+    """
+    logger = get_dagster_logger()
+
+    # Get the target date (default to yesterday)
+    target_date = (
+        context.partition_key
+        if context.has_partition_key
+        else (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+    )
+
+    logger.info(f"Processing product performance analytics for date: {target_date}")
+
+    # Submit Spark job for product analytics
+    job_result = spark_cluster.submit_spark_job(
+        script_path="/opt/dagster/streaming/spark-streaming/product_performance_analytics.py",
+        args={"date": target_date},
+        job_name=f"product_performance_analytics_{target_date}",
+        executor_memory="2g",
+        executor_cores=2,
+        driver_memory="1g",
+    )
+
+    # Extract metrics from job results
+    results = job_result.get("results", {})
+    total_products = results.get("total_products", 0)
+    total_purchases = results.get("total_purchases", 0)
+    total_revenue = results.get("total_revenue", 0.0)
+    avg_conversion_rate = results.get("avg_conversion_rate", 0.0)
+
+    logger.info(
+        f"Product analytics completed - "
+        f"Products: {total_products}, "
+        f"Purchases: {total_purchases}, "
+        f"Revenue: ${total_revenue:,.2f}, "
+        f"Avg Conversion: {avg_conversion_rate:.2%}"
+    )
+
+    return MaterializeResult(
+        metadata={
+            "total_products": MetadataValue.int(total_products),
+            "total_purchases": MetadataValue.int(total_purchases),
+            "total_revenue": MetadataValue.float(total_revenue),
+            "avg_conversion_rate": MetadataValue.float(avg_conversion_rate),
+            "target_date": MetadataValue.text(target_date),
+            "job_status": MetadataValue.text(job_result.get("status", "unknown")),
+        }
+    )
+
+
+# Group all silver to gold assets together
+silver_to_gold_assets = [
+    daily_customer_analytics_asset,
+    daily_sales_summary_asset,
+    product_performance_analytics_asset,
+]

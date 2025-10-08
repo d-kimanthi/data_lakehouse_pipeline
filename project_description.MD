@@ -11,8 +11,6 @@ This project implements a complete real-time analytics platform for e-commerce d
 - **Data Lakehouse**: Apache Iceberg for ACID transactions and time travel
 - **Orchestration**: Dagster for workflow management and data lineage
 - **Cloud Infrastructure**: AWS deployment with Terraform
-- **Data modelling** using DBT to build data marts
-- **Data Quality**: Built-in validation, monitoring, and alerting
 - **Analytics**: Business intelligence dashboards
 
 ## 📊 What This Project Demonstrates

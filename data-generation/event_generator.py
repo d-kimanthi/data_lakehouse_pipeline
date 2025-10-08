@@ -467,10 +467,22 @@ class EcommerceEventGenerator:
 class KafkaEventProducer:
     """
     Kafka producer for streaming e-commerce events
+    Routes events to topic-specific queues based on event type
     """
 
-    def __init__(self, bootstrap_servers: str, topic: str):
-        self.topic = topic
+    def __init__(self, bootstrap_servers: str, base_topic: str = "raw-events"):
+        self.base_topic = base_topic
+        self.bootstrap_servers = bootstrap_servers
+
+        # Define topic mapping for different event types
+        self.topic_mapping = {
+            "page_view": "page-views",
+            "add_to_cart": "order-events",
+            "purchase": "purchases",
+            "user_session": "user-sessions",
+            "product_update": "product-updates",
+        }
+
         self.producer = KafkaProducer(
             bootstrap_servers=bootstrap_servers,
             value_serializer=lambda x: json.dumps(x).encode("utf-8"),
@@ -483,17 +495,38 @@ class KafkaEventProducer:
         )
         self.event_generator = EcommerceEventGenerator()
 
-    def send_event(self, event: Dict[str, Any]):
-        """Send a single event to Kafka"""
+    def get_topic_for_event(self, event: Dict[str, Any]) -> str:
+        """Determine the appropriate topic for an event based on its type"""
+        event_type = event.get("event_type", "unknown")
+
+        # Route to specific topic based on event type
+        specific_topic = self.topic_mapping.get(event_type)
+        if specific_topic:
+            return specific_topic
+
+        # Fallback to base topic for unknown event types
+        logger.warning(
+            f"Unknown event type '{event_type}', routing to base topic '{self.base_topic}'"
+        )
+        return self.base_topic
+
+    def send_event(self, event: Dict[str, Any], target_topic: str):
+        """Send a single event to the appropriate Kafka topic"""
         try:
+
             # Use user_id as key for proper partitioning
             key = event.get("user_id") or event.get("product_id", "unknown")
 
-            self.producer.send(topic=self.topic, key=key, value=event)
+            # Send to the specific topic
+            self.producer.send(topic=target_topic, key=key, value=event)
 
-            # Optional: Wait for confirmation (comment out for better performance)
-            # record_metadata = future.get(timeout=10)
-            # logger.info(f"Event sent to partition {record_metadata.partition}")
+            # Also send to the general raw-events topic for complete event log
+            # self.producer.send(topic=self.base_topic, key=key, value=event)
+
+            # Log the routing decision
+            logger.debug(
+                f"Sent {event.get('event_type')} event to topic: {target_topic} with key: {key}"
+            )
 
         except Exception as e:
             logger.error(f"Error sending event: {e}")
@@ -513,10 +546,17 @@ class KafkaEventProducer:
 
     def _generate_events_batch(self, num_events: int, delay: float):
         """Generate a fixed number of events"""
+        topic_counts = {}
+
         for i in range(num_events):
             try:
                 event = self.event_generator.generate_event()
-                self.send_event(event)
+                target_topic = self.get_topic_for_event(event)
+
+                # Track events per topic
+                topic_counts[target_topic] = topic_counts.get(target_topic, 0) + 1
+
+                self.send_event(event, target_topic)
 
                 if i % 100 == 0:
                     logger.info(f"Sent {i} events...")
@@ -535,6 +575,7 @@ class KafkaEventProducer:
 
         self.producer.flush()
         logger.info(f"Finished sending {num_events} events")
+        logger.info(f"Topic distribution: {dict(sorted(topic_counts.items()))}")
 
     def _generate_events_continuously(self, delay: float):
         """Generate events continuously until interrupted"""
@@ -543,12 +584,18 @@ class KafkaEventProducer:
         event_count = 0
         start_time = time.time()
         last_report_time = start_time
+        topic_counts = {}
 
         try:
             while True:
                 try:
                     event = self.event_generator.generate_event()
-                    self.send_event(event)
+                    target_topic = self.get_topic_for_event(event)
+
+                    # Track events per topic
+                    topic_counts[target_topic] = topic_counts.get(target_topic, 0) + 1
+
+                    self.send_event(event, target_topic)
                     event_count += 1
 
                     current_time = time.time()
@@ -561,6 +608,9 @@ class KafkaEventProducer:
                         )
                         logger.info(
                             f"Generated {event_count} events total ({events_per_minute:.1f} events/min)"
+                        )
+                        logger.info(
+                            f"Topic distribution: {dict(sorted(topic_counts.items()))}"
                         )
                         last_report_time = current_time
 
@@ -576,6 +626,9 @@ class KafkaEventProducer:
             logger.info(
                 f"Stopping continuous generation. Generated {event_count} events in {total_elapsed:.1f} minutes"
             )
+            logger.info(
+                f"Final topic distribution: {dict(sorted(topic_counts.items()))}"
+            )
         finally:
             self.producer.flush()
 
@@ -587,12 +640,16 @@ class KafkaEventProducer:
 if __name__ == "__main__":
     import argparse
 
-    parser = argparse.ArgumentParser(description="Generate e-commerce events")
+    parser = argparse.ArgumentParser(
+        description="Generate e-commerce events with topic-specific routing"
+    )
     parser.add_argument(
         "--bootstrap-servers", default="localhost:9092", help="Kafka bootstrap servers"
     )
     parser.add_argument(
-        "--topic", default="raw-events", help="Kafka topic to send events to"
+        "--topic",
+        default="raw-events",
+        help="Base Kafka topic (events will be routed to specific topics based on type)",
     )
     parser.add_argument(
         "--num-events",
@@ -607,7 +664,7 @@ if __name__ == "__main__":
         "--continuous",
         "-c",
         action="store_true",
-        help="Run continuously until interrupted (ignores --num-events)",
+        help="Run continuously until interrupted (ignores --num-events). Shows topic distribution every 60 seconds.",
     )
 
     args = parser.parse_args()
