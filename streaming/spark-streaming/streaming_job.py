@@ -1,12 +1,13 @@
 # streaming/spark-streaming/streaming_job.py
 
-import os
+import json
 import logging
+import os
+from datetime import datetime
+
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import *
 from pyspark.sql.types import *
-from datetime import datetime
-import json
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -31,28 +32,45 @@ class EcommerceStreamProcessor:
         # For local development - using MinIO as S3
         spark = (
             SparkSession.builder.appName(self.app_name)
-            .config("spark.jars.packages", 
-                    "org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0,"
-                    "org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.4.2,"
-                    "org.apache.hadoop:hadoop-aws:3.3.4,"
-                    "com.amazonaws:aws-java-sdk-bundle:1.12.565")
+            .config(
+                "spark.jars.packages",
+                "org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0,"
+                "org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.4.2,"
+                "org.apache.hadoop:hadoop-aws:3.3.4,"
+                "com.amazonaws:aws-java-sdk-bundle:1.12.565",
+            )
             .config("spark.sql.adaptive.enabled", "true")
             .config("spark.sql.adaptive.coalescePartitions.enabled", "true")
-            .config("spark.sql.extensions", 
-                    "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions")
-            .config("spark.sql.catalog.iceberg", 
-                    "org.apache.iceberg.spark.SparkCatalog")
-            .config("spark.sql.catalog.iceberg.type", "hadoop")
-            .config("spark.sql.catalog.iceberg.warehouse", 
-                    "s3a://bronze/iceberg-warehouse/")
+            .config(
+                "spark.sql.extensions",
+                "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions",
+            )
+            .config(
+                "spark.sql.catalog.iceberg", "org.apache.iceberg.spark.SparkCatalog"
+            )
+            .config(
+                "spark.sql.catalog.iceberg.catalog-impl",
+                "org.apache.iceberg.rest.RESTCatalog",
+            )
+            .config("spark.sql.catalog.iceberg.uri", "http://iceberg-rest:8181")
+            .config("spark.sql.catalog.iceberg.warehouse", "s3a://data-lake/warehouse/")
+            .config(
+                "spark.sql.catalog.iceberg.io-impl",
+                "org.apache.iceberg.aws.s3.S3FileIO",
+            )
             # MinIO configuration for local development
-            .config("spark.hadoop.fs.s3a.impl", 
-                    "org.apache.hadoop.fs.s3a.S3AFileSystem")
-            .config("spark.hadoop.fs.s3a.endpoint", "http://localhost:9000")
+            .config(
+                "spark.hadoop.fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem"
+            )
+            .config("spark.hadoop.fs.s3a.endpoint", "http://minio:9000")
             .config("spark.hadoop.fs.s3a.access.key", "minioadmin")
             .config("spark.hadoop.fs.s3a.secret.key", "minioadmin")
             .config("spark.hadoop.fs.s3a.path.style.access", "true")
             .config("spark.hadoop.fs.s3a.connection.ssl.enabled", "false")
+            .config("spark.sql.catalog.iceberg.s3.endpoint", "http://minio:9000")
+            .config("spark.sql.catalog.iceberg.s3.path-style-access", "true")
+            .config("spark.sql.catalog.iceberg.s3.access-key-id", "minioadmin")
+            .config("spark.sql.catalog.iceberg.s3.secret-access-key", "minioadmin")
             .getOrCreate()
         )
 
@@ -61,9 +79,10 @@ class EcommerceStreamProcessor:
 
     def _create_iceberg_tables(self):
         """Create Iceberg tables for Bronze and Silver layers"""
-        
+
         # Bronze layer - raw events table
-        self.spark.sql("""
+        self.spark.sql(
+            """
             CREATE TABLE IF NOT EXISTS iceberg.bronze.raw_events (
                 event_id STRING,
                 event_type STRING,
@@ -80,10 +99,12 @@ class EcommerceStreamProcessor:
                 'write.metadata.delete-after-commit.enabled'='true',
                 'write.metadata.previous-versions-max'='3'
             )
-        """)
-        
+        """
+        )
+
         # Silver layer - page views table
-        self.spark.sql("""
+        self.spark.sql(
+            """
             CREATE TABLE IF NOT EXISTS iceberg.silver.page_views (
                 event_id STRING,
                 timestamp TIMESTAMP,
@@ -102,10 +123,12 @@ class EcommerceStreamProcessor:
             TBLPROPERTIES (
                 'write.parquet.compression-codec'='snappy'
             )
-        """)
-        
+        """
+        )
+
         # Silver layer - purchases table
-        self.spark.sql("""
+        self.spark.sql(
+            """
             CREATE TABLE IF NOT EXISTS iceberg.silver.purchases (
                 event_id STRING,
                 timestamp TIMESTAMP,
@@ -128,29 +151,10 @@ class EcommerceStreamProcessor:
             TBLPROPERTIES (
                 'write.parquet.compression-codec'='snappy'
             )
-        """)
-
-        logger.info("Iceberg tables created successfully")
-            .config(
-                "spark.sql.catalog.iceberg", "org.apache.iceberg.spark.SparkCatalog"
-            )
-            .config("spark.sql.catalog.iceberg.type", "glue")
-            .config(
-                "spark.sql.catalog.iceberg.warehouse",
-                f"s3://{os.getenv('S3_BUCKET', 'your-bucket')}/iceberg-warehouse/",
-            )
-            .config(
-                "spark.hadoop.fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem"
-            )
-            .config(
-                "spark.hadoop.fs.s3a.aws.credentials.provider",
-                "com.amazonaws.auth.DefaultAWSCredentialsProviderChain",
-            )
-            .getOrCreate()
+        """
         )
 
-        spark.sparkContext.setLogLevel("WARN")
-        return spark
+        logger.info("Iceberg tables created successfully")
 
     def _setup_schemas(self):
         """Define schemas for different event types"""

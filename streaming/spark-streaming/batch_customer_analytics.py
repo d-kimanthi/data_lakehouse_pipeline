@@ -26,22 +26,27 @@ def process_daily_customer_analytics(target_date: str):
                     "spark.jars.packages",
                     "org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.4.2,"
                     "org.apache.hadoop:hadoop-aws:3.3.4,"
-                    "com.amazonaws:aws-java-sdk-bundle:1.12.565",
+                    "org.projectnessie.nessie-integrations:nessie-spark-extensions-3.5_2.12:0.76.0",
                 )
                 .config("spark.sql.adaptive.enabled", "true")
                 .config("spark.sql.adaptive.coalescePartitions.enabled", "true")
                 .config(
                     "spark.sql.extensions",
-                    "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions",
+                    "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions,"
+                    "org.projectnessie.spark.extensions.NessieSparkSessionExtensions",
                 )
                 .config(
                     "spark.sql.catalog.iceberg", "org.apache.iceberg.spark.SparkCatalog"
                 )
-                .config("spark.sql.catalog.iceberg.type", "hadoop")
+                .config(
+                    "spark.sql.catalog.iceberg.catalog-impl",
+                    "org.apache.iceberg.nessie.NessieCatalog",
+                )
+                .config("spark.sql.catalog.iceberg.uri", "http://nessie:19120/api/v1")
+                .config("spark.sql.catalog.iceberg.ref", "main")
                 .config(
                     "spark.sql.catalog.iceberg.warehouse", "s3a://data-lake/warehouse/"
                 )
-                # MinIO configuration - endpoint determined by execution mode
                 .config(
                     "spark.hadoop.fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem"
                 )
@@ -58,29 +63,6 @@ def process_daily_customer_analytics(target_date: str):
             try:
                 # Check available databases and tables
                 context.log.info("🔍 Checking available silver layer data")
-                # Create Gold table if not exists
-                spark.sql(
-                    """
-                    CREATE TABLE IF NOT EXISTS iceberg.gold.daily_customer_analytics (
-                        user_id STRING,
-                        date DATE,
-                        page_views BIGINT,
-                        unique_sessions BIGINT,
-                        unique_products_viewed BIGINT,
-                        total_purchases BIGINT,
-                        total_revenue DECIMAL(12,2),
-                        avg_order_value DECIMAL(10,2),
-                        first_visit_time TIMESTAMP,
-                        last_activity_time TIMESTAMP,
-                        customer_segment STRING,
-                        created_at TIMESTAMP
-                    ) USING iceberg
-                    PARTITIONED BY (date)
-                    TBLPROPERTIES (
-                        'write.parquet.compression-codec'='snappy'
-                    )
-                """
-                )
 
                 # Check if Iceberg tables exist and list them
                 context.log.info("📋 Checking Iceberg catalog and tables...")
@@ -179,9 +161,11 @@ def process_daily_customer_analytics(target_date: str):
                     context.log.info(
                         "💾 Saving customer analytics to Iceberg gold layer"
                     )
-                    customer_analytics.write.format("iceberg").mode(
-                        "overwrite"
-                    ).saveAsTable("iceberg.gold.daily_customer_analytics")
+                    customer_analytics.write.format("iceberg").mode("overwrite").option(
+                        "write.parquet.compression-codec", "snappy"
+                    ).partitionBy("date").saveAsTable(
+                        "iceberg.gold.daily_customer_analytics"
+                    )
 
                     context.log.info(
                         "✅ Successfully saved analytics to iceberg.gold.daily_customer_analytics"

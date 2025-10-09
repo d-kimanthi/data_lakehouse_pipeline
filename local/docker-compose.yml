@@ -312,23 +312,78 @@ services:
     networks:
       - ecommerce-network
 
-  # Iceberg REST Catalog - Metadata service for Iceberg tables
-  iceberg-rest:
-    image: tabulario/iceberg-rest:0.7.0
-    container_name: ecommerce-iceberg-rest
-    ports:
-      - "8181:8181"
+  # Hive Metastore Database - PostgreSQL for Hive metadata
+  hive-metastore-db:
+    image: postgres:15
+    container_name: ecommerce-hive-metastore-db
     environment:
-      - CATALOG_WAREHOUSE=s3a://data-lake/warehouse/
-      - CATALOG_IO__IMPL=org.apache.iceberg.aws.s3.S3FileIO
-      - CATALOG_S3_ENDPOINT=http://minio:9000
-      - CATALOG_S3_ACCESS__KEY__ID=minioadmin
-      - CATALOG_S3_SECRET__ACCESS__KEY=minioadmin
-      - CATALOG_S3_PATH__STYLE__ACCESS=true
-    depends_on:
-      - minio
+      POSTGRES_DB: metastore
+      POSTGRES_USER: hive
+      POSTGRES_PASSWORD: hive
+    ports:
+      - "5436:5432"
+    volumes:
+      - hive_metastore_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hive"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
     networks:
       - ecommerce-network
+
+  # Hive Metastore - Shared metadata service for Iceberg
+  hive-metastore:
+    image: apache/hive:4.0.0
+    container_name: ecommerce-hive-metastore
+    depends_on:
+      hive-metastore-db:
+        condition: service_healthy
+      minio:
+        condition: service_started
+    ports:
+      - "9083:9083"
+    environment:
+      SERVICE_NAME: metastore
+      DB_DRIVER: postgres
+      SERVICE_OPTS: "-Djavax.jdo.option.ConnectionDriverName=org.postgresql.Driver 
+                     -Djavax.jdo.option.ConnectionURL=jdbc:postgresql://hive-metastore-db:5432/metastore 
+                     -Djavax.jdo.option.ConnectionUserName=hive 
+                     -Djavax.jdo.option.ConnectionPassword=hive
+                     -Dfs.s3a.endpoint=http://minio:9000
+                     -Dfs.s3a.access.key=minioadmin
+                     -Dfs.s3a.secret.key=minioadmin
+                     -Dfs.s3a.path.style.access=true
+                     -Dfs.s3a.connection.ssl.enabled=false
+                     -Dfs.s3a.impl=org.apache.hadoop.fs.s3a.S3AFileSystem"
+    volumes:
+      - ./jars:/opt/hive/lib/custom
+    networks:
+      - ecommerce-network
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "9083"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  # Nessie - Git-like catalog for Iceberg tables with versioning
+  nessie:
+    image: projectnessie/nessie:0.76.0
+    container_name: ecommerce-nessie
+    ports:
+      - "19120:19120"
+    environment:
+      - QUARKUS_HTTP_PORT=19120
+      - NESSIE_VERSION_STORE_TYPE=IN_MEMORY
+    networks:
+      - ecommerce-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:19120/api/v2/config"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
 
   # Trino - Distributed SQL query engine for Iceberg
   trino:
@@ -340,12 +395,22 @@ services:
       - ./trino/catalog:/etc/trino/catalog
       - ./trino/config.properties:/etc/trino/config.properties
     depends_on:
-      - minio
-      - iceberg-rest
+      hive-metastore:
+        condition: service_healthy
+      minio:
+        condition: service_started
     networks:
       - ecommerce-network
     environment:
       - JAVA_OPTS=-Xmx2G
+      - AWS_REGION=us-east-1
+      - AWS_EC2_METADATA_DISABLED=true
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/v1/info || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
 
   # Superset - Data visualization and exploration platform
   superset-db:
@@ -393,6 +458,8 @@ services:
       - ./superset/superset_config.py:/app/pythonpath/superset_config.py
     command: >
       bash -c "
+      pip install trino &&
+      pip install sqlalchemy-trino &&
       superset db upgrade &&
       superset fab create-admin --username admin --firstname Admin --lastname User --email admin@superset.com --password admin &&
       superset init &&
@@ -420,6 +487,7 @@ volumes:
   zookeeper_logs:
   kafka_data:
   minio_data:
+  hive_metastore_data:
   superset_db_data:
   superset_home:
   redis_data:

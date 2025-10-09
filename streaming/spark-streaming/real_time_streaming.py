@@ -61,7 +61,13 @@ class EcommerceStreamProcessor:
         self.kafka_bootstrap = kafka_bootstrap
         self.minio_endpoint = minio_endpoint
 
-        # For local development - using MinIO as S3
+        # Determine Nessie endpoint based on execution mode
+        if self.is_cluster_mode:
+            nessie_uri = "http://nessie:19120/api/v1"
+        else:
+            nessie_uri = "http://localhost:19120/api/v1"
+
+        # For local development - using MinIO as S3 and Nessie catalog
         spark = (
             SparkSession.builder.appName(self.app_name)
             .config(
@@ -69,18 +75,24 @@ class EcommerceStreamProcessor:
                 "org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0,"
                 "org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.4.2,"
                 "org.apache.hadoop:hadoop-aws:3.3.4,"
-                "com.amazonaws:aws-java-sdk-bundle:1.12.565",
+                "org.projectnessie.nessie-integrations:nessie-spark-extensions-3.5_2.12:0.76.0",
             )
             .config("spark.sql.adaptive.enabled", "true")
             .config("spark.sql.adaptive.coalescePartitions.enabled", "true")
             .config(
                 "spark.sql.extensions",
-                "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions",
+                "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions,"
+                "org.projectnessie.spark.extensions.NessieSparkSessionExtensions",
             )
             .config(
                 "spark.sql.catalog.iceberg", "org.apache.iceberg.spark.SparkCatalog"
             )
-            .config("spark.sql.catalog.iceberg.type", "hadoop")
+            .config(
+                "spark.sql.catalog.iceberg.catalog-impl",
+                "org.apache.iceberg.nessie.NessieCatalog",
+            )
+            .config("spark.sql.catalog.iceberg.uri", nessie_uri)
+            .config("spark.sql.catalog.iceberg.ref", "main")
             .config("spark.sql.catalog.iceberg.warehouse", "s3a://data-lake/warehouse/")
             # MinIO configuration - endpoint determined by execution mode
             .config(
@@ -371,7 +383,7 @@ class EcommerceStreamProcessor:
             .option("kafka.bootstrap.servers", self.kafka_bootstrap)
             .option(
                 "subscribe",
-                "raw-events,page-views,purchases,cart-events,user-sessions,product-updates",
+                "raw-events,page-views,purchases,order-events,user-sessions,product-updates",
             )
             .option("startingOffsets", "latest")
             .option("failOnDataLoss", "false")
