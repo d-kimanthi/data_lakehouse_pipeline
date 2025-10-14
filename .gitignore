@@ -181,3 +181,5 @@ secrets/
 credentials/
 *.secret
 *.credential
+
+udemy/
