@@ -1,7 +1,7 @@
 #!/bin/bash
 # Script to run the Spark streaming job with all required configurations
 
-echo "🚀 Starting Spark Streaming Job for E-commerce Analytics"
+echo "Starting Spark Streaming Job for E-commerce Analytics"
 echo "================================================="
 
 # Parse command line arguments
@@ -60,7 +60,7 @@ fi
 
 # Validate job type
 if [[ "$JOB_TYPE" != "ingestion" && "$JOB_TYPE" != "processing" && "$JOB_TYPE" != "both" ]]; then
-    echo "❌ Invalid job type: $JOB_TYPE"
+    echo "Invalid job type: $JOB_TYPE"
     echo "   Valid options: ingestion, processing, both"
     exit 1
 fi
@@ -68,27 +68,27 @@ fi
 # Determine Spark master URL
 if [ "$USE_CLUSTER" = true ]; then
     SPARK_MASTER="spark://localhost:7077"
-    echo "📡 Using Docker Spark cluster: $SPARK_MASTER"
-    echo "🎯 Job type: $JOB_TYPE"
+    echo "Using Docker Spark cluster: $SPARK_MASTER"
+    echo "Job type: $JOB_TYPE"
     
     # Check if cluster is accessible
     if ! curl -s --connect-timeout 5 http://localhost:7080 > /dev/null; then
-        echo "❌ Cannot connect to Spark cluster web UI at http://localhost:7080"
+        echo " Cannot connect to Spark cluster web UI at http://localhost:7080"
         echo "   Please ensure Docker Spark cluster is running:"
         echo "   docker ps | grep spark"
         exit 1
     fi
     
-    echo "✅ Spark cluster is accessible"
-    echo "📊 Spark Master UI: http://localhost:7080"
+    echo "Spark cluster is accessible"
+    echo "Spark Master UI: http://localhost:7080"
 else
     SPARK_MASTER="local[*]"
-    echo "💻 Using local Spark execution: $SPARK_MASTER"
-    echo "🎯 Job type: $JOB_TYPE"
+    echo "Using local Spark execution: $SPARK_MASTER"
+    echo "Job type: $JOB_TYPE"
     
     # Check if SPARK_HOME is set for local execution
     if [ -z "$SPARK_HOME" ]; then
-        echo "⚠️  SPARK_HOME not set. Please ensure Spark is installed and SPARK_HOME is configured."
+        echo "SPARK_HOME not set. Please ensure Spark is installed and SPARK_HOME is configured."
         echo "Example: export SPARK_HOME=/path/to/spark"
         echo "Or use --cluster to submit to Docker Spark cluster instead"
         exit 1
@@ -98,11 +98,11 @@ fi
 # Check if required JARs exist
 JARS_DIR="../jars"
 if [ ! -d "$JARS_DIR" ]; then
-    echo "⚠️  JARs directory not found: $JARS_DIR"
+    echo "JARs directory not found: $JARS_DIR"
     echo "Please ensure the required JAR files are available."
 fi
 
-echo "📦 Using Spark packages and JARs:"
+echo "Using Spark packages and JARs:"
 echo "  - Iceberg Spark Runtime 1.4.2"
 echo "  - Nessie Spark Extensions 0.76.0"
 echo "  - Spark SQL Kafka"
@@ -111,8 +111,8 @@ echo "  - S3A filesystem support"
 # Determine spark-submit command based on execution mode
 if [ "$USE_CLUSTER" = true ]; then
     # For cluster mode, we'll submit via Docker exec to the Spark master
-    echo "🚀 Submitting job to Spark cluster..."
-    
+    echo "Submitting job to Spark cluster..."
+
     # Copy the Python script to the master container
     docker cp real_time_streaming.py ecommerce-spark-master:/tmp/real_time_streaming.py
     
@@ -149,7 +149,7 @@ if [ "$USE_CLUSTER" = true ]; then
         /tmp/real_time_streaming.py $CLUSTER_ARGS --job-type $JOB_TYPE
 else
     # Local execution using SPARK_HOME
-    echo "🚀 Running job locally..."
+    echo "Running job locally..."
     $SPARK_HOME/bin/spark-submit \
         --master $SPARK_MASTER \
         --packages "org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.4.2,org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0,org.apache.hadoop:hadoop-aws:3.3.4,org.projectnessie.nessie-integrations:nessie-spark-extensions-3.5_2.12:0.76.0" \
@@ -177,7 +177,7 @@ fi
 echo "✅ Spark streaming job completed or stopped."
 
 if [ "$USE_CLUSTER" = true ]; then
-    echo "📊 Monitor job execution at: http://localhost:7080"
-    echo "🧹 Cleaning up temporary files..."
+    echo "Monitor job execution at: http://localhost:7080"
+    echo "Cleaning up temporary files..."
     docker exec ecommerce-spark-master rm -f /tmp/real_time_streaming.py
 fi
