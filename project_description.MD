@@ -10,7 +10,6 @@ This project implements a complete real-time analytics platform for e-commerce d
 - **Stream Processing**: Apache Spark Structured Streaming for real-time data processing
 - **Data Lakehouse**: Apache Iceberg for ACID transactions and time travel
 - **Orchestration**: Dagster for workflow management and data lineage
-- **Cloud Infrastructure**: AWS deployment with Terraform
 - **Analytics**: Business intelligence dashboards
 
 ## 📊 What This Project Demonstrates
@@ -51,14 +50,6 @@ This project implements a complete real-time analytics platform for e-commerce d
 - **Stream Processing**: Real-time data processing at scale
 - **Data Modeling**: Dimensional modeling using dbt
 - **Pipeline Orchestration**: Complex dependency management
-- **Data Quality**: Validation, monitoring, and lineage tracking - great expectations
-
-### Cloud & Infrastructure
-
-- **Infrastructure as Code**: Terraform for cloud resource management
-- **Containerization**: Docker for consistent environments
-- **Cloud Services**: AWS managed services integration
-- **Monitoring**: Comprehensive observability setup
 
 ## 🔍 Monitoring & Observability
 

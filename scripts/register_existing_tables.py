@@ -11,7 +11,7 @@ from pyspark.sql import SparkSession
 def register_existing_tables():
     """Register existing Iceberg tables in Nessie catalog"""
 
-    print("🔧 Initializing Spark session with Nessie catalog...")
+    print("Initializing Spark session with Nessie catalog...")
 
     spark = (
         SparkSession.builder.appName("RegisterExistingTables")
@@ -43,7 +43,7 @@ def register_existing_tables():
         .getOrCreate()
     )
 
-    print("✅ Spark session initialized")
+    print("Spark session initialized")
 
     # Tables to register (adjust based on your actual tables)
     tables_to_register = [
@@ -62,15 +62,13 @@ def register_existing_tables():
             # Check if table already exists in Nessie
             try:
                 spark.sql(f"DESCRIBE TABLE {full_table_name}")
-                print(
-                    f"⏭️  Table {full_table_name} already exists in Nessie, skipping..."
-                )
+                print(f"Table {full_table_name} already exists in Nessie, skipping...")
                 skipped_count += 1
                 continue
             except Exception:
                 pass  # Table doesn't exist, proceed with registration
 
-            print(f"📋 Registering table: {full_table_name}")
+            print(f"Registering table: {full_table_name}")
             print(f"   Location: {table_path}")
 
             # Register the table by creating it with the existing location
@@ -84,7 +82,7 @@ def register_existing_tables():
             """
             )
 
-            print(f"✅ Successfully registered {full_table_name}")
+            print(f"Successfully registered {full_table_name}")
             registered_count += 1
 
             # Verify table is readable
@@ -92,7 +90,7 @@ def register_existing_tables():
             print(f"   Table has {count:,} rows")
 
         except Exception as e:
-            print(f"❌ Failed to register {full_table_name}: {e}")
+            print(f"Failed to register {full_table_name}: {e}")
             print("   Trying alternative method...")
 
             try:
@@ -104,22 +102,20 @@ def register_existing_tables():
                     LOCATION '{table_path}'
                 """
                 )
-                print(
-                    f"✅ Successfully registered {full_table_name} using CREATE TABLE"
-                )
+                print(f"Successfully registered {full_table_name} using CREATE TABLE")
                 registered_count += 1
             except Exception as e2:
-                print(f"❌ Alternative method also failed: {e2}")
+                print(f"Alternative method also failed: {e2}")
 
     print("\n" + "=" * 60)
-    print("📊 Registration Summary:")
-    print(f"   ✅ Successfully registered: {registered_count}")
-    print(f"   ⏭️  Already existed: {skipped_count}")
-    print(f"   ❌ Failed: {len(tables_to_register) - registered_count - skipped_count}")
+    print("Registration Summary:")
+    print(f"   Successfully registered: {registered_count}")
+    print(f"   Already existed: {skipped_count}")
+    print(f"   Failed: {len(tables_to_register) - registered_count - skipped_count}")
     print("=" * 60)
 
     # List all tables in Nessie
-    print("\n📋 Current tables in Nessie catalog:")
+    print("\nCurrent tables in Nessie catalog:")
     for schema in ["bronze", "silver", "gold"]:
         try:
             tables = spark.sql(f"SHOW TABLES IN iceberg.{schema}").collect()
@@ -133,7 +129,7 @@ def register_existing_tables():
             print(f"\n  {schema.upper()} schema: Error - {e}")
 
     spark.stop()
-    print("\n✅ Table registration complete!")
+    print("\nTable registration complete!")
 
 
 if __name__ == "__main__":
