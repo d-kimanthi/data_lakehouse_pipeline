@@ -8,65 +8,35 @@ import argparse
 import sys
 from datetime import datetime
 
-from pyspark.sql import SparkSession
+from common.dagster_utils import (
+    dagster_pipes_context,
+    report_error_metadata,
+    report_no_data_metadata,
+    report_success_metadata,
+)
+
+# Import common utilities
+from common.spark_config import create_spark_session
 from pyspark.sql.functions import *
-from pyspark.sql.types import *
 
 
 def process_product_performance_analytics(target_date: str):
     """Process product performance analytics with Dagster Pipes"""
     try:
-        from dagster_pipes import open_dagster_pipes
-
-        with open_dagster_pipes() as context:
+        with dagster_pipes_context() as context:
             context.log.info("Starting product performance analytics")
             context.log.info(f"Processing date: {target_date}")
 
-            spark = (
-                SparkSession.builder.appName(f"ProductPerformance-{target_date}")
-                .config(
-                    "spark.jars.packages",
-                    "org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.4.2,"
-                    "org.apache.hadoop:hadoop-aws:3.3.4,"
-                    "org.projectnessie.nessie-integrations:nessie-spark-extensions-3.5_2.12:0.76.0",
-                )
-                .config("spark.sql.adaptive.enabled", "true")
-                .config("spark.sql.adaptive.coalescePartitions.enabled", "true")
-                .config(
-                    "spark.sql.extensions",
-                    "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions,"
-                    "org.projectnessie.spark.extensions.NessieSparkSessionExtensions",
-                )
-                .config(
-                    "spark.sql.catalog.iceberg", "org.apache.iceberg.spark.SparkCatalog"
-                )
-                .config(
-                    "spark.sql.catalog.iceberg.catalog-impl",
-                    "org.apache.iceberg.nessie.NessieCatalog",
-                )
-                .config("spark.sql.catalog.iceberg.uri", "http://nessie:19120/api/v1")
-                .config("spark.sql.catalog.iceberg.ref", "main")
-                .config(
-                    "spark.sql.catalog.iceberg.warehouse", "s3a://data-lake/warehouse/"
-                )
-                .config(
-                    "spark.hadoop.fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem"
-                )
-                .config("spark.hadoop.fs.s3a.endpoint", "http://minio:9000")
-                .config("spark.hadoop.fs.s3a.access.key", "minioadmin")
-                .config("spark.hadoop.fs.s3a.secret.key", "minioadmin")
-                .config("spark.hadoop.fs.s3a.path.style.access", "true")
-                .config("spark.hadoop.fs.s3a.connection.ssl.enabled", "false")
-                .getOrCreate()
+            # Create Spark session using common configuration
+            spark = create_spark_session(
+                app_name=f"ProductPerformance-{target_date}", include_kafka=False
             )
-
-            context.log.info("Spark session initialized successfully")
 
             context.log.info("Spark session initialized successfully")
 
             try:
                 # Calculate product performance metrics
-                context.log.info("📊 Calculating product performance metrics")
+                context.log.info("Calculating product performance metrics")
 
                 product_analytics = spark.sql(
                     f"""
@@ -113,17 +83,15 @@ def process_product_performance_analytics(target_date: str):
                 )
 
                 total_products = product_analytics.count()
-                context.log.info(f"📈 Calculated metrics for {total_products} products")
+                context.log.info(f"Calculated metrics for {total_products} products")
 
                 if total_products > 0:
                     # Show sample results
-                    context.log.info("📋 Sample product analytics:")
+                    context.log.info("Sample product analytics:")
                     product_analytics.show(5, truncate=False)
 
                     # Write to Iceberg Gold layer
-                    context.log.info(
-                        "💾 Saving product analytics to Iceberg gold layer"
-                    )
+                    context.log.info("Saving product analytics to Iceberg gold layer")
                     product_analytics.write.format("iceberg").mode("overwrite").option(
                         "write.parquet.compression-codec", "snappy"
                     ).partitionBy("date").saveAsTable(
@@ -131,7 +99,7 @@ def process_product_performance_analytics(target_date: str):
                     )
 
                     context.log.info(
-                        "✅ Successfully saved analytics to iceberg.gold.product_performance_analytics"
+                        "Successfully saved analytics to iceberg.gold.product_performance_analytics"
                     )
 
                     # Calculate summary metrics
@@ -147,54 +115,36 @@ def process_product_performance_analytics(target_date: str):
                         or 0
                     )
 
-                    # Report comprehensive metadata
-                    context.report_asset_materialization(
-                        metadata={
-                            "processing_date": target_date,
+                    # Report comprehensive metadata using utility function
+                    report_success_metadata(
+                        context=context,
+                        target_date=target_date,
+                        spark=spark,
+                        table_location="iceberg.gold.product_performance_analytics",
+                        custom_metrics={
                             "total_products": total_products,
                             "total_purchases": int(total_purchases),
                             "total_revenue": f"${total_revenue:.2f}",
                             "avg_conversion_rate": f"{avg_conversion:.2%}",
-                            "table_format": "iceberg",
-                            "table_location": "iceberg.gold.product_performance_analytics",
-                            "spark_app_name": spark.sparkContext.appName,
-                            "spark_app_id": spark.sparkContext.applicationId,
-                            "processing_timestamp": datetime.now().isoformat(),
-                            "status": "SUCCESS",
                         },
-                        data_version=f"{target_date}-v1",
                     )
                 else:
-                    context.log.warning(
-                        "⚠️ No product data found for the specified date"
-                    )
-                    context.report_asset_materialization(
-                        metadata={
-                            "processing_date": target_date,
-                            "total_products": 0,
-                            "status": "SUCCESS_NO_DATA",
-                            "processing_timestamp": datetime.now().isoformat(),
-                        },
-                        data_version=f"{target_date}-v1",
+                    context.log.warning("No product data found for the specified date")
+                    report_no_data_metadata(
+                        context=context,
+                        target_date=target_date,
+                        table_location="iceberg.gold.product_performance_analytics",
                     )
 
                 context.log.info("Product performance analytics completed successfully")
 
             except Exception as e:
                 context.log.error(f"Error during data processing: {str(e)}")
-                context.report_asset_materialization(
-                    metadata={
-                        "processing_date": target_date,
-                        "status": "FAILED",
-                        "error_message": str(e),
-                        "processing_timestamp": datetime.now().isoformat(),
-                    },
-                    data_version=f"{target_date}-error",
-                )
+                report_error_metadata(context=context, target_date=target_date, error=e)
                 raise
 
             finally:
-                context.log.info("🔧 Stopping Spark session")
+                context.log.info("Stopping Spark session")
                 spark.stop()
 
     except ImportError as e:
@@ -218,7 +168,7 @@ def main():
     args = parser.parse_args()
 
     results = process_product_performance_analytics(args.target_date)
-    print(f"🎉 Product performance analytics completed successfully: {results}")
+    print(f"Product performance analytics completed successfully: {results}")
 
 
 if __name__ == "__main__":

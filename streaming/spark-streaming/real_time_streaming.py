@@ -1,10 +1,15 @@
 # streaming/spark-streaming/streaming_job.py
 
+import argparse
 import json
 import logging
 import os
 from datetime import datetime
 
+from common.schemas import EcommerceSchemas
+
+# Import common utilities
+from common.spark_config import SparkConfig
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import *
 from pyspark.sql.types import *
@@ -20,208 +25,32 @@ class EcommerceStreamProcessor:
     Real-time processing: Kafka → Bronze → Silver (Iceberg tables)
     """
 
-    def __init__(
-        self, app_name: str = "ecommerce-streaming", force_cluster_mode: bool = False
-    ):
+    def __init__(self, app_name: str = "ecommerce-streaming"):
         self.app_name = app_name
 
-        # Detect execution environment (local vs cluster)
-        if force_cluster_mode:
-            self.is_cluster_mode = True
-            logger.info("Cluster mode forced via command line argument")
-        else:
-            self.is_cluster_mode = self._detect_cluster_mode()
-        logger.info(f"Running in {'cluster' if self.is_cluster_mode else 'local'} mode")
+        # Use common SparkConfig for configuration management
+        self.spark_config = SparkConfig()
 
-        self.spark = self._create_spark_session()
+        # Create Spark session with Kafka support
+        self.spark = self.spark_config.create_session(
+            app_name=self.app_name, include_kafka=True
+        )
+
+        # Store endpoints for later use
+        self.kafka_bootstrap = self.spark_config.kafka_bootstrap
+        self.minio_endpoint = self.spark_config.minio_endpoint
+
+        # Load schemas from common module
         self._setup_schemas()
         self._create_iceberg_tables()
 
-    def _detect_cluster_mode(self) -> bool:
-        """Detect if running in cluster mode by checking for Docker environment"""
-        # Check if we're running inside a Docker container
-        return os.path.exists("/.dockerenv") or os.environ.get("SPARK_MODE") == "master"
-
-    def _create_spark_session(self) -> SparkSession:
-        """Create Spark session with Iceberg and Kafka configurations"""
-
-        # Configure endpoints based on execution mode
-        if self.is_cluster_mode:
-            # Use Docker service names for cluster mode (internal port)
-            kafka_bootstrap = "kafka:29092"
-            minio_endpoint = "http://ecommerce-minio:9000"
-            logger.info("Using cluster networking (Docker service names)")
-        else:
-            # Use localhost for local mode
-            kafka_bootstrap = "localhost:9092"
-            minio_endpoint = "http://localhost:9000"
-            logger.info("Using local networking (localhost)")
-
-        # Store for later use
-        self.kafka_bootstrap = kafka_bootstrap
-        self.minio_endpoint = minio_endpoint
-
-        # Determine Nessie endpoint based on execution mode
-        if self.is_cluster_mode:
-            nessie_uri = "http://nessie:19120/api/v1"
-        else:
-            nessie_uri = "http://localhost:19120/api/v1"
-
-        # For local development - using MinIO as S3 and Nessie catalog
-        spark = (
-            SparkSession.builder.appName(self.app_name)
-            .config(
-                "spark.jars.packages",
-                "org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0,"
-                "org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.4.2,"
-                "org.apache.hadoop:hadoop-aws:3.3.4,"
-                "org.projectnessie.nessie-integrations:nessie-spark-extensions-3.5_2.12:0.76.0",
-            )
-            .config("spark.sql.adaptive.enabled", "true")
-            .config("spark.sql.adaptive.coalescePartitions.enabled", "true")
-            .config(
-                "spark.sql.extensions",
-                "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions,"
-                "org.projectnessie.spark.extensions.NessieSparkSessionExtensions",
-            )
-            .config(
-                "spark.sql.catalog.iceberg", "org.apache.iceberg.spark.SparkCatalog"
-            )
-            .config(
-                "spark.sql.catalog.iceberg.catalog-impl",
-                "org.apache.iceberg.nessie.NessieCatalog",
-            )
-            .config("spark.sql.catalog.iceberg.uri", nessie_uri)
-            .config("spark.sql.catalog.iceberg.ref", "main")
-            .config("spark.sql.catalog.iceberg.warehouse", "s3a://data-lake/warehouse/")
-            # MinIO configuration - endpoint determined by execution mode
-            .config(
-                "spark.hadoop.fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem"
-            )
-            .config("spark.hadoop.fs.s3a.endpoint", self.minio_endpoint)
-            .config("spark.hadoop.fs.s3a.access.key", "minioadmin")
-            .config("spark.hadoop.fs.s3a.secret.key", "minioadmin")
-            .config("spark.hadoop.fs.s3a.path.style.access", "true")
-            .config("spark.hadoop.fs.s3a.connection.ssl.enabled", "false")
-            .getOrCreate()
-        )
-
-        spark.sparkContext.setLogLevel("WARN")
-        return spark
-
     def _setup_schemas(self):
-        """Define schemas for different event types"""
-
-        # Page view event schema
-        self.page_view_schema = StructType(
-            [
-                StructField("event_id", StringType(), False),
-                StructField("event_type", StringType(), False),
-                StructField("timestamp", TimestampType(), False),
-                StructField("user_id", StringType(), False),
-                StructField("session_id", StringType(), False),
-                StructField("product_id", StringType(), False),
-                StructField("page_type", StringType(), False),
-                StructField("referrer", StringType(), True),
-                StructField("user_agent", StringType(), True),
-                StructField("ip_address", StringType(), True),
-                StructField("device_type", StringType(), True),
-                StructField("metadata", MapType(StringType(), StringType()), True),
-            ]
-        )
-
-        # Purchase event schema
-        self.purchase_schema = StructType(
-            [
-                StructField("event_id", StringType(), False),
-                StructField("event_type", StringType(), False),
-                StructField("timestamp", TimestampType(), False),
-                StructField("user_id", StringType(), False),
-                StructField("session_id", StringType(), False),
-                StructField("order_id", StringType(), False),
-                StructField("total_amount", DecimalType(10, 2), False),
-                StructField("subtotal", DecimalType(10, 2), False),
-                StructField("discount_percent", IntegerType(), False),
-                StructField("discount_amount", DecimalType(10, 2), False),
-                StructField("payment_method", StringType(), False),
-                StructField("shipping_method", StringType(), False),
-                StructField(
-                    "shipping_address",
-                    StructType(
-                        [
-                            StructField("street", StringType(), True),
-                            StructField("city", StringType(), True),
-                            StructField("state", StringType(), True),
-                            StructField("zip_code", StringType(), True),
-                            StructField("country", StringType(), True),
-                        ]
-                    ),
-                    True,
-                ),
-                StructField(
-                    "items",
-                    ArrayType(
-                        StructType(
-                            [
-                                StructField("product_id", StringType(), False),
-                                StructField("quantity", IntegerType(), False),
-                                StructField("unit_price", DecimalType(10, 2), False),
-                                StructField("total_price", DecimalType(10, 2), False),
-                                StructField("category", StringType(), False),
-                                StructField("brand", StringType(), False),
-                            ]
-                        )
-                    ),
-                    False,
-                ),
-                StructField("metadata", MapType(StringType(), StringType()), True),
-            ]
-        )
-
-        # Add to cart event schema
-        self.add_to_cart_schema = StructType(
-            [
-                StructField("event_id", StringType(), False),
-                StructField("event_type", StringType(), False),
-                StructField("timestamp", TimestampType(), False),
-                StructField("user_id", StringType(), False),
-                StructField("session_id", StringType(), False),
-                StructField("product_id", StringType(), False),
-                StructField("quantity", IntegerType(), False),
-                StructField("price", DecimalType(10, 2), False),
-                StructField("total_value", DecimalType(10, 2), False),
-                StructField("cart_id", StringType(), False),
-                StructField("metadata", MapType(StringType(), StringType()), True),
-            ]
-        )
-
-        # User session event schema
-        self.user_session_schema = StructType(
-            [
-                StructField("event_id", StringType(), False),
-                StructField("event_type", StringType(), False),
-                StructField("timestamp", TimestampType(), False),
-                StructField("user_id", StringType(), False),
-                StructField("session_id", StringType(), False),
-                StructField("session_type", StringType(), False),
-                StructField("device_type", StringType(), False),
-                StructField("ip_address", StringType(), True),
-                StructField("user_agent", StringType(), True),
-                StructField("metadata", MapType(StringType(), StringType()), True),
-            ]
-        )
-
-        # Product update event schema
-        self.product_update_schema = StructType(
-            [
-                StructField("event_id", StringType(), False),
-                StructField("event_type", StringType(), False),
-                StructField("timestamp", TimestampType(), False),
-                StructField("product_id", StringType(), False),
-                StructField("update_type", StringType(), False),
-                StructField("metadata", MapType(StringType(), StringType()), True),
-            ]
-        )
+        """Load schemas from common schemas module"""
+        self.page_view_schema = EcommerceSchemas.page_view_schema()
+        self.purchase_schema = EcommerceSchemas.purchase_schema()
+        self.add_to_cart_schema = EcommerceSchemas.add_to_cart_schema()
+        self.user_session_schema = EcommerceSchemas.user_session_schema()
+        self.product_update_schema = EcommerceSchemas.product_update_schema()
 
     def _create_iceberg_tables(self):
         """Create Iceberg tables for Bronze and Silver layers"""
@@ -683,9 +512,6 @@ def main():
     # Parse command line arguments
     parser = argparse.ArgumentParser(description="E-commerce Streaming Processor")
     parser.add_argument(
-        "--cluster", action="store_true", help="Force cluster mode execution"
-    )
-    parser.add_argument(
         "--job-type",
         choices=["ingestion", "processing", "both"],
         default="both",
@@ -694,9 +520,9 @@ def main():
 
     args = parser.parse_args()
 
-    logger.info(f"Starting {args.job_type} job...")
+    logger.info(f"Starting {args.job_type} job in cluster mode...")
 
-    processor = EcommerceStreamProcessor(force_cluster_mode=args.cluster)
+    processor = EcommerceStreamProcessor()
 
     try:
         # Start streaming based on job type

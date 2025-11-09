@@ -520,9 +520,6 @@ class KafkaEventProducer:
             # Send to the specific topic
             self.producer.send(topic=target_topic, key=key, value=event)
 
-            # Also send to the general raw-events topic for complete event log
-            # self.producer.send(topic=self.base_topic, key=key, value=event)
-
             # Log the routing decision
             logger.debug(
                 f"Sent {event.get('event_type')} event to topic: {target_topic} with key: {key}"

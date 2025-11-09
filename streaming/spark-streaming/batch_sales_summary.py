@@ -5,82 +5,36 @@ This demonstrates enhanced observability and communication with Dagster.
 
 import argparse
 import sys
-from datetime import datetime
 
-from pyspark.sql import SparkSession
+from common.dagster_utils import (
+    check_silver_tables,
+    dagster_pipes_context,
+    report_no_data_metadata,
+    report_success_metadata,
+)
+
+# Import common utilities
+from common.spark_config import create_spark_session
 from pyspark.sql.functions import *
 
 
 def process_daily_sales_summary(target_date: str):
     """Process daily sales summary for the given date with Dagster Pipes"""
     try:
-        from dagster_pipes import open_dagster_pipes
-
-        with open_dagster_pipes() as context:
+        with dagster_pipes_context() as context:
             context.log.info("Starting Spark daily sales summary job")
             context.log.info(f"Processing date: {target_date}")
 
-            spark = (
-                SparkSession.builder.appName(f"DailySalesSummary-{target_date}")
-                .config(
-                    "spark.jars.packages",
-                    "org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.4.2,"
-                    "org.apache.hadoop:hadoop-aws:3.3.4,"
-                    "org.projectnessie.nessie-integrations:nessie-spark-extensions-3.5_2.12:0.76.0",
-                )
-                .config("spark.sql.adaptive.enabled", "true")
-                .config("spark.sql.adaptive.coalescePartitions.enabled", "true")
-                .config(
-                    "spark.sql.extensions",
-                    "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions,"
-                    "org.projectnessie.spark.extensions.NessieSparkSessionExtensions",
-                )
-                .config(
-                    "spark.sql.catalog.iceberg", "org.apache.iceberg.spark.SparkCatalog"
-                )
-                .config(
-                    "spark.sql.catalog.iceberg.catalog-impl",
-                    "org.apache.iceberg.nessie.NessieCatalog",
-                )
-                .config("spark.sql.catalog.iceberg.uri", "http://nessie:19120/api/v1")
-                .config("spark.sql.catalog.iceberg.ref", "main")
-                .config(
-                    "spark.sql.catalog.iceberg.warehouse", "s3a://data-lake/warehouse/"
-                )
-                .config(
-                    "spark.hadoop.fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem"
-                )
-                .config("spark.hadoop.fs.s3a.endpoint", "http://minio:9000")
-                .config("spark.hadoop.fs.s3a.access.key", "minioadmin")
-                .config("spark.hadoop.fs.s3a.secret.key", "minioadmin")
-                .config("spark.hadoop.fs.s3a.path.style.access", "true")
-                .config("spark.hadoop.fs.s3a.connection.ssl.enabled", "false")
-                .getOrCreate()
+            # Create Spark session using common configuration
+            spark = create_spark_session(
+                app_name=f"DailySalesSummary-{target_date}", include_kafka=False
             )
 
             context.log.info("Spark session initialized successfully")
 
             try:
-                context.log.info("🔍 Checking available silver layer data")
-
-                try:
-                    databases = spark.sql("SHOW DATABASES").collect()
-                    context.log.info(
-                        f"Available databases: {[row[0] for row in databases]}"
-                    )
-
-                    try:
-                        silver_tables = spark.sql(
-                            "SHOW TABLES IN iceberg.silver"
-                        ).collect()
-                        context.log.info(
-                            f"Silver tables: {[row[1] for row in silver_tables]}"
-                        )
-                    except Exception as e:
-                        context.log.warning(f"Could not list silver tables: {e}")
-
-                except Exception as e:
-                    context.log.warning(f"Error checking catalog: {e}")
+                # Check available silver layer data
+                check_silver_tables(context, spark)
 
                 sales_summary = spark.sql(
                     f"""
@@ -165,34 +119,27 @@ def process_daily_sales_summary(target_date: str):
                         "✅ Successfully saved sales summary to iceberg.gold.daily_sales_summary"
                     )
 
-                    context.report_asset_materialization(
-                        metadata={
-                            "processing_date": target_date,
+                    # Report success with standardized metadata
+                    report_success_metadata(
+                        context=context,
+                        target_date=target_date,
+                        spark=spark,
+                        table_location="iceberg.gold.daily_sales_summary",
+                        custom_metrics={
                             "total_days_processed": total_days,
                             "total_orders": int(metrics["total_orders"] or 0),
                             "total_revenue": f"${float(metrics['total_revenue'] or 0):.2f}",
                             "avg_order_value": f"${float(metrics['avg_order_value'] or 0):.2f}",
                             "unique_customers": int(metrics["unique_customers"] or 0),
                             "avg_conversion_rate": f"{float(metrics['avg_conversion_rate'] or 0) * 100:.2f}%",
-                            "table_format": "iceberg",
-                            "table_location": "iceberg.gold.daily_sales_summary",
-                            "spark_app_name": spark.sparkContext.appName,
-                            "spark_app_id": spark.sparkContext.applicationId,
-                            "processing_timestamp": datetime.now().isoformat(),
-                            "status": "SUCCESS",
                         },
-                        data_version=f"{target_date}-v1",
                     )
                 else:
                     context.log.warning("⚠️ No sales data found for the specified date")
-                    context.report_asset_materialization(
-                        metadata={
-                            "processing_date": target_date,
-                            "total_days_processed": 0,
-                            "status": "NO_DATA",
-                            "table_location": "iceberg.gold.daily_sales_summary",
-                        },
-                        data_version=f"{target_date}-v1",
+                    report_no_data_metadata(
+                        context=context,
+                        target_date=target_date,
+                        table_location="iceberg.gold.daily_sales_summary",
                     )
 
             except Exception as e:
