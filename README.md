@@ -9,7 +9,7 @@ A modern data lakehouse for real-time e-commerce analytics using Kafka, Spark St
 ![Data Lakehouse Architecture](images/lakehouse.png)
 
 **Tech Stack:**  
-Kafka 7.4 • Spark 3.5 • Iceberg 1.4.2 • Nessie 0.76 • MinIO • Trino 435 • Dagster • Superset 3.0
+Kafka • Spark 3.5 • Iceberg 1.4.2 • Nessie • MinIO • Trino • Dagster • Superset
 
 ---
 
