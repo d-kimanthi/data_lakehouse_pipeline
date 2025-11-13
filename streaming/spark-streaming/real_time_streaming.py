@@ -28,15 +28,13 @@ class EcommerceStreamProcessor:
     def __init__(self, app_name: str = "ecommerce-streaming"):
         self.app_name = app_name
 
-        # Use common SparkConfig for configuration management
+        # Create Spark session
         self.spark_config = SparkConfig()
 
-        # Create Spark session with Kafka support
         self.spark = self.spark_config.create_session(
             app_name=self.app_name, include_kafka=True
         )
 
-        # Store endpoints for later use
         self.kafka_bootstrap = self.spark_config.kafka_bootstrap
         self.minio_endpoint = self.spark_config.minio_endpoint
 

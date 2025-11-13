@@ -312,61 +312,6 @@ services:
     networks:
       - ecommerce-network
 
-  # Hive Metastore Database - PostgreSQL for Hive metadata
-  hive-metastore-db:
-    image: postgres:15
-    container_name: ecommerce-hive-metastore-db
-    environment:
-      POSTGRES_DB: metastore
-      POSTGRES_USER: hive
-      POSTGRES_PASSWORD: hive
-    ports:
-      - "5436:5432"
-    volumes:
-      - hive_metastore_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U hive"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-    networks:
-      - ecommerce-network
-
-  # Hive Metastore - Shared metadata service for Iceberg
-  hive-metastore:
-    image: apache/hive:4.0.0
-    container_name: ecommerce-hive-metastore
-    depends_on:
-      hive-metastore-db:
-        condition: service_healthy
-      minio:
-        condition: service_started
-    ports:
-      - "9083:9083"
-    environment:
-      SERVICE_NAME: metastore
-      DB_DRIVER: postgres
-      SERVICE_OPTS: "-Djavax.jdo.option.ConnectionDriverName=org.postgresql.Driver 
-                     -Djavax.jdo.option.ConnectionURL=jdbc:postgresql://hive-metastore-db:5432/metastore 
-                     -Djavax.jdo.option.ConnectionUserName=hive 
-                     -Djavax.jdo.option.ConnectionPassword=hive
-                     -Dfs.s3a.endpoint=http://minio:9000
-                     -Dfs.s3a.access.key=minioadmin
-                     -Dfs.s3a.secret.key=minioadmin
-                     -Dfs.s3a.path.style.access=true
-                     -Dfs.s3a.connection.ssl.enabled=false
-                     -Dfs.s3a.impl=org.apache.hadoop.fs.s3a.S3AFileSystem"
-    volumes:
-      - ./jars:/opt/hive/lib/custom
-    networks:
-      - ecommerce-network
-    healthcheck:
-      test: ["CMD", "nc", "-z", "localhost", "9083"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 60s
-
   # Nessie - Git-like catalog for Iceberg tables with versioning
   nessie:
     image: projectnessie/nessie:0.76.0
@@ -395,8 +340,6 @@ services:
       - ./trino/catalog:/etc/trino/catalog
       - ./trino/config.properties:/etc/trino/config.properties
     depends_on:
-      hive-metastore:
-        condition: service_healthy
       minio:
         condition: service_started
     networks:
