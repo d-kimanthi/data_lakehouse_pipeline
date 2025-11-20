@@ -147,7 +147,7 @@ def product_performance_analytics(
         "spark.hadoop.fs.s3a.path.style.access=true",
         "--conf",
         "spark.hadoop.fs.s3a.impl=org.apache.hadoop.fs.s3a.S3AFileSystem",
-        "/opt/dagster/app/streaming/spark-streaming/product_performance_analytics.py",
+        "/opt/dagster/app/streaming/spark-streaming/batch_product_performance_analytics.py",
         "--target_date",
         target_date,
     ]

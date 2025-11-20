@@ -90,14 +90,14 @@ def process_daily_sales_summary(target_date: str):
                 )
 
                 context.log.info(
-                    "📊 Computing daily sales summary from Iceberg silver layer tables"
+                    "Computing daily sales summary from Iceberg silver layer tables"
                 )
 
                 total_days = sales_summary.count()
-                context.log.info(f"📈 Generated sales summary for {total_days} day(s)")
+                context.log.info(f"Generated sales summary for {total_days} day(s)")
 
                 if total_days > 0:
-                    context.log.info("📋 Sample sales summary results:")
+                    context.log.info("Sample sales summary results:")
                     sales_summary.show(5, truncate=False)
 
                     metrics = sales_summary.agg(
@@ -108,7 +108,7 @@ def process_daily_sales_summary(target_date: str):
                         avg("conversion_rate").alias("avg_conversion_rate"),
                     ).collect()[0]
 
-                    context.log.info("💾 Saving sales summary to Iceberg gold layer")
+                    context.log.info("Saving sales summary to Iceberg gold layer")
                     sales_summary.write.format("iceberg").mode("overwrite").option(
                         "write.parquet.compression-codec", "snappy"
                     ).partitionBy("date").saveAsTable(
@@ -116,7 +116,7 @@ def process_daily_sales_summary(target_date: str):
                     )
 
                     context.log.info(
-                        "✅ Successfully saved sales summary to iceberg.gold.daily_sales_summary"
+                        "Successfully saved sales summary to iceberg.gold.daily_sales_summary"
                     )
 
                     # Report success with standardized metadata
@@ -135,7 +135,7 @@ def process_daily_sales_summary(target_date: str):
                         },
                     )
                 else:
-                    context.log.warning("⚠️ No sales data found for the specified date")
+                    context.log.warning(" No sales data found for the specified date")
                     report_no_data_metadata(
                         context=context,
                         target_date=target_date,
@@ -143,7 +143,7 @@ def process_daily_sales_summary(target_date: str):
                     )
 
             except Exception as e:
-                context.log.error(f"❌ Error during processing: {str(e)}")
+                context.log.error(f"Error during processing: {str(e)}")
                 context.log.error(f"Error type: {type(e).__name__}")
                 import traceback
 
@@ -154,7 +154,7 @@ def process_daily_sales_summary(target_date: str):
                 context.log.info("Spark session stopped")
 
     except Exception as e:
-        print(f"❌ Fatal error in process_daily_sales_summary: {str(e)}")
+        print(f"Fatal error in process_daily_sales_summary: {str(e)}")
         import traceback
 
         print(traceback.format_exc())
@@ -173,6 +173,6 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    print(f"🚀 Starting daily sales summary processing for {args.date}")
+    print(f"Starting daily sales summary processing for {args.date}")
     process_daily_sales_summary(args.date)
-    print("✅ Daily sales summary processing completed successfully")
+    print("Daily sales summary processing completed successfully")
